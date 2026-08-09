@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "module": "CommonJS",
+    "paths": {
+      "src": ["./src/*"]
+    },
+    "target": "ES6"
+  },
+  "exclude": ["build"]
+}
