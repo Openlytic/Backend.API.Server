@@ -63,6 +63,7 @@ Strict pipeline **Entity → Helper → Service → Resolver**, TypeScript files
 - **Logging:** real code paths avoid `console.log` noise; track via the queue/analytic rows. Dev boot logging is fine in `server.ts`.
 
 ### Env — `src/env.ts`
+
 Loads `.env` → `.env.{branch}` → `.env.local` (later overrides earlier). Key vars: `PORT`, `NODE_ENV`, `POSTGRES_URL`, `JWT_SECRET`, `TRACKING_SECRET`, `SQS_QUEUE_URL`, `SQS_ENDPOINT` (localstack), OAuth client ids/secrets. **Don't change the load order.**
 
 ## Adding a domain module

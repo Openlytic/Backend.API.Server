@@ -72,18 +72,18 @@ src/
 
 ### Naming Conventions
 
-| Element                  | Convention                              | Example                                                |
-| ------------------------ | --------------------------------------- | ------------------------------------------------------ |
-| Files                    | kebab-case with dot-suffix              | `app-queue.entity.ts`, `email-analytic.service.ts`     |
-| Variables & functions    | camelCase                               | `recipientEmail`, `getEmailAnalyticForQuery`           |
-| Constants                | UPPER_SNAKE_CASE                        | `APP_QUEUE_ENTITY_NAME`, `DELIVERY_WARNING_THRESHOLD`  |
-| TypeORM entities         | PascalCase                              | `EmailAnalytic`, `AppQueue`                            |
-| GraphQL types            | PascalCase                              | `Email`, `EmailDetail`, `LinkClickSummary`             |
-| GraphQL input types      | `{Name}InputType` / `{Name}{Action}InputType` | `EmailCreateInputType`                          |
-| Database columns/tables  | snake_case                              | `organization_id`, `app_queue`, `email_recipients`     |
-| Error codes              | UPPER_SNAKE_CASE strings                | `INTEGRATION_NOT_FOUND`, `EMAIL_NOT_FOUND`             |
-| Module folders           | kebab-case                              | `email-analytic/`, `tracked-link/`                     |
-| GraphQL operations       | `create{Entity}` / `{entities}` queries | `createEmail`, `emails`, `emailAnalytics`              |
+| Element                 | Convention                                    | Example                                               |
+| ----------------------- | --------------------------------------------- | ----------------------------------------------------- |
+| Files                   | kebab-case with dot-suffix                    | `app-queue.entity.ts`, `email-analytic.service.ts`    |
+| Variables & functions   | camelCase                                     | `recipientEmail`, `getEmailAnalyticForQuery`          |
+| Constants               | UPPER_SNAKE_CASE                              | `APP_QUEUE_ENTITY_NAME`, `DELIVERY_WARNING_THRESHOLD` |
+| TypeORM entities        | PascalCase                                    | `EmailAnalytic`, `AppQueue`                           |
+| GraphQL types           | PascalCase                                    | `Email`, `EmailDetail`, `LinkClickSummary`            |
+| GraphQL input types     | `{Name}InputType` / `{Name}{Action}InputType` | `EmailCreateInputType`                                |
+| Database columns/tables | snake_case                                    | `organization_id`, `app_queue`, `email_recipients`    |
+| Error codes             | UPPER_SNAKE_CASE strings                      | `INTEGRATION_NOT_FOUND`, `EMAIL_NOT_FOUND`            |
+| Module folders          | kebab-case                                    | `email-analytic/`, `tracked-link/`                    |
+| GraphQL operations      | `create{Entity}` / `{entities}` queries       | `createEmail`, `emails`, `emailAnalytics`             |
 
 ### Import Rules (CRITICAL)
 
@@ -119,9 +119,7 @@ All mutations MUST be wrapped in `useTransaction()`:
 
 ```typescript
 const createEmail = async (parent, args, context) =>
-  useTransaction((transaction) =>
-    emailService.createEmailForMutation(args?.inputData, context?.user, transaction)
-  )
+  useTransaction((transaction) => emailService.createEmailForMutation(args?.inputData, context?.user, transaction))
 ```
 
 The `transaction` parameter must be threaded into every write via `getRepository(entity, transaction)`. Queries (read resolvers) call helpers without a transaction.
@@ -224,7 +222,7 @@ Fields in ascending **alphabetical order**, two exceptions:
 | Auth            | jsonwebtoken, bcryptjs                            |
 | Cloud           | AWS (SQS) — localstack for local dev              |
 | Lint            | ESLint 8 + Prettier                               |
-| Package Manager | npm                                              |
+| Package Manager | npm                                               |
 
 ---
 
@@ -236,18 +234,18 @@ This file is the single source of truth for Copilot and agent behavior. **Agents
 
 ### When to Update (Triggers)
 
-| Trigger                              | What to Update                                                                                                                        |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| **New module added**                 | Update the module list in "Architecture Overview", and any counts in "Project Persona".                                               |
-| **New dependency introduced**        | Add a row to "Technology Stack Reference" if foundational. Add a "Tech Debt & Legacy Warnings" entry if it has quirks.                 |
-| **New naming convention adopted**    | Add a row to the "Naming Conventions" table.                                                                                          |
-| **New architectural pattern**        | Add a subsection under "Architectural Patterns" with rationale + example.                                                             |
-| **New "DO NOT Refactor" guardrail**  | Add a numbered item to "PR Review Guardrails → DO NOT Refactor" with a clear rationale.                                               |
-| **New "ALWAYS Flag" rule**           | Add a numbered item to "PR Review Guardrails → ALWAYS Flag".                                                                          |
-| **Queue/SQS envelope convention change** | Update the "Queue / SQS Envelope" subsection — co-commit with the email service consumer.                                         |
-| **Build/deploy pipeline change**     | Update "Architecture Overview" or "Technology Stack Reference" as appropriate.                                                        |
-| **Formatting/lint rule change**      | Update "Formatting" under "Style Guide".                                                                                              |
-| **New top-level `src/` directory**   | Add the directory to "Architecture Overview" with a comment.                                                                          |
+| Trigger                                  | What to Update                                                                                                         |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **New module added**                     | Update the module list in "Architecture Overview", and any counts in "Project Persona".                                |
+| **New dependency introduced**            | Add a row to "Technology Stack Reference" if foundational. Add a "Tech Debt & Legacy Warnings" entry if it has quirks. |
+| **New naming convention adopted**        | Add a row to the "Naming Conventions" table.                                                                           |
+| **New architectural pattern**            | Add a subsection under "Architectural Patterns" with rationale + example.                                              |
+| **New "DO NOT Refactor" guardrail**      | Add a numbered item to "PR Review Guardrails → DO NOT Refactor" with a clear rationale.                                |
+| **New "ALWAYS Flag" rule**               | Add a numbered item to "PR Review Guardrails → ALWAYS Flag".                                                           |
+| **Queue/SQS envelope convention change** | Update the "Queue / SQS Envelope" subsection — co-commit with the email service consumer.                              |
+| **Build/deploy pipeline change**         | Update "Architecture Overview" or "Technology Stack Reference" as appropriate.                                         |
+| **Formatting/lint rule change**          | Update "Formatting" under "Style Guide".                                                                               |
+| **New top-level `src/` directory**       | Add the directory to "Architecture Overview" with a comment.                                                           |
 
 ### How to Update
 
@@ -276,15 +274,15 @@ When an agent detects staleness during normal work, fix it immediately:
 
 A change is not just its diff. For every **exported** symbol the PR touches — service/helper function, entity, GraphQL type/field, barrel export, middleware, util — find and re-verify **all call sites, including files not in the PR**:
 
-| If the PR changes…                                                       | Trace and re-verify (often unchanged files)                                                                                                  |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| A service/helper **signature or return shape**                           | Every resolver + sibling service that calls it (`useTransaction` threading, return shape, camelCase aliases)                                |
-| An **entity** (column / association / table)                             | Helpers' query builders + raw-SQL literals, the module's `.graphql` type, and whether a schema rebuild (`db:sync`) or migration is needed    |
-| A **GraphQL typedef** (field / type / nullability)                       | The matching resolver exists + is registered in `resolvers/index.ts`; **breaking changes** vs frontend consumers                            |
-| A **barrel export** (`entities/helpers/services.ts`)                     | Every importer of that alias                                                                                                                |
-| **Auth directive / middleware / subscription**                           | All resolvers gated by `@auth`; PubSub publishers ↔ subscribers                                                                             |
-| `src/utils/*` (database, error, sqs-client, jwt)                         | High fan-out — verify broadly, not just the diff                                                                                            |
-| The **SQS envelope** or `app_queue` lifecycle                            | Email service consumer (separate repo) compatibility — `event`/`queue_id`/`params` contract, retry/backoff semantics                        |
+| If the PR changes…                                   | Trace and re-verify (often unchanged files)                                                                                               |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| A service/helper **signature or return shape**       | Every resolver + sibling service that calls it (`useTransaction` threading, return shape, camelCase aliases)                              |
+| An **entity** (column / association / table)         | Helpers' query builders + raw-SQL literals, the module's `.graphql` type, and whether a schema rebuild (`db:sync`) or migration is needed |
+| A **GraphQL typedef** (field / type / nullability)   | The matching resolver exists + is registered in `resolvers/index.ts`; **breaking changes** vs frontend consumers                          |
+| A **barrel export** (`entities/helpers/services.ts`) | Every importer of that alias                                                                                                              |
+| **Auth directive / middleware / subscription**       | All resolvers gated by `@auth`; PubSub publishers ↔ subscribers                                                                           |
+| `src/utils/*` (database, error, sqs-client, jwt)     | High fan-out — verify broadly, not just the diff                                                                                          |
+| The **SQS envelope** or `app_queue` lifecycle        | Email service consumer (separate repo) compatibility — `event`/`queue_id`/`params` contract, retry/backoff semantics                      |
 
 **Find call sites mechanically (don't eyeball):**
 

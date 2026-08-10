@@ -7,3 +7,4 @@ dist/
 *.log
 .claude/changes.md
 graphify-out/
+package-lock.json

@@ -36,7 +36,7 @@ For any task that modifies **2 or more files**, the agent MUST output a structur
 
 | #   | File Path                               | Action | Summary                          |
 | --- | --------------------------------------- | ------ | -------------------------------- |
-| 1   | src/modules/{module}/{module}.entity.ts | CREATE | New TypeORM entity              |
+| 1   | src/modules/{module}/{module}.entity.ts | CREATE | New TypeORM entity               |
 | 2   | src/modules/entities.ts                 | MODIFY | Add entity import + registration |
 
 ### Dependency Order
@@ -73,16 +73,16 @@ A plan is **not required** for:
 
 ### Terminal Commands
 
-| Action               | Command                       | Notes                                    |
-| -------------------- | ----------------------------- | ---------------------------------------- |
-| Install dependencies | `npm i`                       | Uses npm (the repo lockfile is npm)      |
-| Run dev server       | `npm run dev`                 | `tsx watch src/server.ts` (hot reload)   |
-| Lint check           | `npm run lint`                | ESLint validation                        |
-| Lint fix             | `npm run lint-fix`            | Auto-fix linting issues                  |
-| Typecheck            | `npm run typecheck`           | `tsc --noEmit`                           |
-| Format               | `npm run format`              | Prettier format all files                |
-| Build                | `npm run build`               | lint + typecheck + esbuild bundle → dist |
-| Schema rebuild       | `npm run db:sync`             | dev-only (drops `public` schema first)   |
+| Action               | Command             | Notes                                    |
+| -------------------- | ------------------- | ---------------------------------------- |
+| Install dependencies | `npm i`             | Uses npm (the repo lockfile is npm)      |
+| Run dev server       | `npm run dev`       | `tsx watch src/server.ts` (hot reload)   |
+| Lint check           | `npm run lint`      | ESLint validation                        |
+| Lint fix             | `npm run lint-fix`  | Auto-fix linting issues                  |
+| Typecheck            | `npm run typecheck` | `tsc --noEmit`                           |
+| Format               | `npm run format`    | Prettier format all files                |
+| Build                | `npm run build`     | lint + typecheck + esbuild bundle → dist |
+| Schema rebuild       | `npm run db:sync`   | dev-only (drops `public` schema first)   |
 
 ### Database Operations
 
@@ -104,28 +104,28 @@ A plan is **not required** for:
 
 ### NEVER Modify Without Explicit Permission
 
-| File / Directory                | Reason                                                           |
-| ------------------------------- | ---------------------------------------------------------------- |
-| `Dockerfile` / `docker-compose.yml` | Container/build definitions — affects all environments     |
-| `.env.sample`                   | Environment variable template — shared across the team           |
-| `src/utils/database.ts`         | DataSource + pool config, `useTransaction()` lock_timeout — critical infrastructure |
-| `src/graphql/directives/auth.ts` | Auth directive — security-critical, affects all endpoints       |
-| `src/modules/entities.ts`       | Centralized entity registry — fragile, high-impact               |
-| `package.json` (dependencies)   | Adding/removing packages requires discussion                     |
-| `.eslintrc.json`                | Linting rules affect entire codebase                             |
-| `tsconfig.json`                 | Compiler options affect the whole project                        |
+| File / Directory                    | Reason                                                                              |
+| ----------------------------------- | ----------------------------------------------------------------------------------- |
+| `Dockerfile` / `docker-compose.yml` | Container/build definitions — affects all environments                              |
+| `.env.sample`                       | Environment variable template — shared across the team                              |
+| `src/utils/database.ts`             | DataSource + pool config, `useTransaction()` lock_timeout — critical infrastructure |
+| `src/graphql/directives/auth.ts`    | Auth directive — security-critical, affects all endpoints                           |
+| `src/modules/entities.ts`           | Centralized entity registry — fragile, high-impact                                  |
+| `package.json` (dependencies)       | Adding/removing packages requires discussion                                        |
+| `.eslintrc.json`                    | Linting rules affect entire codebase                                                |
+| `tsconfig.json`                     | Compiler options affect the whole project                                           |
 
 ### Safe to Modify Autonomously
 
-| File / Directory                           | Conditions                                                   |
-| ------------------------------------------ | ------------------------------------------------------------ |
-| `src/modules/{module}/{module}.service.ts` | Follow service patterns; wrap mutations in `useTransaction()` |
-| `src/modules/{module}/{module}.helper.ts`  | Follow helper patterns; use `getRepository(entity, tx)`       |
+| File / Directory                           | Conditions                                                                       |
+| ------------------------------------------ | -------------------------------------------------------------------------------- |
+| `src/modules/{module}/{module}.service.ts` | Follow service patterns; wrap mutations in `useTransaction()`                    |
+| `src/modules/{module}/{module}.helper.ts`  | Follow helper patterns; use `getRepository(entity, tx)`                          |
 | `src/modules/{module}/{module}.entity.ts`  | Follow TypeORM entity patterns (`@PrimaryColumn` + `@BeforeInsert generateId()`) |
-| `src/graphql/typeDefs/{module}.graphql`    | Follow naming conventions; include `@auth` on mutations       |
-| `src/graphql/resolvers/{module}/`          | Keep resolvers thin; wrap mutations in `useTransaction()`     |
-| `src/modules/services.ts`                  | Adding new barrel exports only                                |
-| `src/modules/helpers.ts`                   | Adding new barrel exports only                                |
+| `src/graphql/typeDefs/{module}.graphql`    | Follow naming conventions; include `@auth` on mutations                          |
+| `src/graphql/resolvers/{module}/`          | Keep resolvers thin; wrap mutations in `useTransaction()`                        |
+| `src/modules/services.ts`                  | Adding new barrel exports only                                                   |
+| `src/modules/helpers.ts`                   | Adding new barrel exports only                                                   |
 
 ---
 
@@ -206,8 +206,7 @@ input XCreateInputType {
 }
 
 extend type Mutation {
-  createAnX(inputData: XCreateInputType!): X
-    @auth(roles: ["admin", "org_owner"])
+  createAnX(inputData: XCreateInputType!): X @auth(roles: ["admin", "org_owner"])
 }
 ```
 
@@ -239,20 +238,20 @@ Both this file (`.agents/instructions.md`) and `.github/copilot-instructions.md`
 
 ### Triggers and Responsibilities
 
-| Trigger                                         | File to Update                    | Action                                                                                        |
-| ----------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------- |
-| **New module added**                            | `.github/copilot-instructions.md` | Update module/domain counts in "Project Persona" and "Architecture Overview".                 |
-| **New module added**                            | `.agents/instructions.md`         | Verify the "New Module Checklist" still matches the actual steps taken.                        |
-| **New file added to Scope Limits**              | `.agents/instructions.md`         | Add the file to "NEVER Modify" or "Safe to Modify" table with rationale.                       |
-| **Terminal command or script changed**          | `.agents/instructions.md`         | Update the "Terminal Commands" table to match `package.json` scripts.                         |
-| **New convention or pattern introduced**        | `.github/copilot-instructions.md` | Add to the relevant section (Naming, Architectural Patterns, Import/Export Rules, etc.).       |
-| **New "DO NOT Refactor" or "ALWAYS Flag" rule** | `.github/copilot-instructions.md` | Add a numbered item to the appropriate "PR Review Guardrails" list.                           |
-| **Queue/SQS envelope conventions changed**      | `.github/copilot-instructions.md` | Update the queue conventions section (currently `{ event, queue_id, params }`).               |
-| **Code generation pattern changed**             | `.agents/instructions.md`         | Update the code examples to match the new pattern.                                            |
-| **GraphQL schema conventions changed**          | Both files                        | Update "GraphQL Field/File Ordering" sections plus the typeDef example.                       |
-| **Build/deploy infrastructure changed**         | `.github/copilot-instructions.md` | Update "Architecture Overview" and "Technology Stack Reference".                              |
-| **Formatting/lint rules changed**               | `.github/copilot-instructions.md` | Update the "Formatting" section to reflect the current ESLint/Prettier config.                |
-| **Planning protocol or scope limits adjusted**  | `.agents/instructions.md`         | Update the relevant section directly.                                                         |
+| Trigger                                         | File to Update                    | Action                                                                                   |
+| ----------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------- |
+| **New module added**                            | `.github/copilot-instructions.md` | Update module/domain counts in "Project Persona" and "Architecture Overview".            |
+| **New module added**                            | `.agents/instructions.md`         | Verify the "New Module Checklist" still matches the actual steps taken.                  |
+| **New file added to Scope Limits**              | `.agents/instructions.md`         | Add the file to "NEVER Modify" or "Safe to Modify" table with rationale.                 |
+| **Terminal command or script changed**          | `.agents/instructions.md`         | Update the "Terminal Commands" table to match `package.json` scripts.                    |
+| **New convention or pattern introduced**        | `.github/copilot-instructions.md` | Add to the relevant section (Naming, Architectural Patterns, Import/Export Rules, etc.). |
+| **New "DO NOT Refactor" or "ALWAYS Flag" rule** | `.github/copilot-instructions.md` | Add a numbered item to the appropriate "PR Review Guardrails" list.                      |
+| **Queue/SQS envelope conventions changed**      | `.github/copilot-instructions.md` | Update the queue conventions section (currently `{ event, queue_id, params }`).          |
+| **Code generation pattern changed**             | `.agents/instructions.md`         | Update the code examples to match the new pattern.                                       |
+| **GraphQL schema conventions changed**          | Both files                        | Update "GraphQL Field/File Ordering" sections plus the typeDef example.                  |
+| **Build/deploy infrastructure changed**         | `.github/copilot-instructions.md` | Update "Architecture Overview" and "Technology Stack Reference".                         |
+| **Formatting/lint rules changed**               | `.github/copilot-instructions.md` | Update the "Formatting" section to reflect the current ESLint/Prettier config.           |
+| **Planning protocol or scope limits adjusted**  | `.agents/instructions.md`         | Update the relevant section directly.                                                    |
 
 ### Update Protocol
 
@@ -269,11 +268,11 @@ Both this file (`.agents/instructions.md`) and `.github/copilot-instructions.md`
 
 ### Tier the work to the model
 
-| Tier                | Model (current)     | Use for                                                                                                                                                            |
-| ------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Cheap / scout**   | `claude-haiku-4-5`  | Exploration & file reading, locating code, grep/symbol search, gathering context, enumerating call sites, summarizing files, simple mechanical edits              |
-| **Default / build** | `claude-sonnet-4-6` | Day-to-day implementation: new modules following the Entity→Helper→Service→Resolver pipeline, writing/editing services/helpers/resolvers/typedefs, lint fixing    |
-| **Strong / judge**  | `claude-opus-4-8`   | Only where it adds real value: cross-module architecture decisions, tricky multi-file debugging, tenant-safety / security review, ambiguous trade-offs              |
+| Tier                | Model (current)     | Use for                                                                                                                                                        |
+| ------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cheap / scout**   | `claude-haiku-4-5`  | Exploration & file reading, locating code, grep/symbol search, gathering context, enumerating call sites, summarizing files, simple mechanical edits           |
+| **Default / build** | `claude-sonnet-4-6` | Day-to-day implementation: new modules following the Entity→Helper→Service→Resolver pipeline, writing/editing services/helpers/resolvers/typedefs, lint fixing |
+| **Strong / judge**  | `claude-opus-4-8`   | Only where it adds real value: cross-module architecture decisions, tricky multi-file debugging, tenant-safety / security review, ambiguous trade-offs         |
 
 Always use the current model IDs above; do not hardcode older generations.
 
