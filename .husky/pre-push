@@ -14,17 +14,12 @@ ENV_FILES="$BASE_PATH/.env $BASE_PATH/.env.$ENV $BASE_PATH/.env.local"
 # initialize variable to track the source of BUILD_ON_PRE_PUSH
 BUILD_ON_PRE_PUSH_SOURCE=""
 
-# - check each file for BUILD_ON_PRE_PUSH definition
+# - read only the BUILD_ON_PRE_PUSH flag from each env file (never shell-source
+#   the files: values with spaces, e.g. GMAIL_SCOPE URLs, are not shell-safe).
 for file in $ENV_FILES; do
   if [ -f "$file" ] && grep -q "^BUILD_ON_PRE_PUSH=" "$file"; then
+    BUILD_ON_PRE_PUSH=$(grep "^BUILD_ON_PRE_PUSH=" "$file" | head -n1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
     BUILD_ON_PRE_PUSH_SOURCE="$file"
-  fi
-done
-
-# - load each env file if it exists
-for file in $ENV_FILES; do
-  if [ -f "$file" ]; then
-    . "$file"
   fi
 done
 
