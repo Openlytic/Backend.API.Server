@@ -5,3 +5,5 @@ dist/
 !.env.sample
 .DS_Store
 *.log
+.claude/changes.md
+graphify-out/
