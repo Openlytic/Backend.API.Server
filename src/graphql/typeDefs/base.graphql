@@ -1,0 +1,15 @@
+scalar Date
+scalar UUID
+
+type HealthCheck {
+  ok: Boolean!
+  uptime: Float
+}
+
+type Query {
+  health: HealthCheck
+}
+
+type Mutation {
+  _empty: Boolean
+}
