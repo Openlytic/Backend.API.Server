@@ -6,7 +6,7 @@ export const entities: Function[] = [AuthTokenEntity, UserEntity, VerificationTo
 
 export { AuthTokenEntity, UserEntity, VerificationTokenEntity }
 
-// Dev-only guard — mirrors Gain; never auto-sync in the request flow.
+// Dev-only guard — never auto-sync in the request flow.
 export const syncDBEntities = async () => {
   // await dataSource.synchronize()
 }
