@@ -1,6 +1,6 @@
 {
   "extends": ["airbnb-base", "prettier"],
-  "plugins": ["import"],
+  "plugins": ["import", "@typescript-eslint"],
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
     "ecmaVersion": 2022,
@@ -31,8 +31,20 @@
   "overrides": [
     {
       "files": ["*.ts", "*.tsx"],
+      "parserOptions": {
+        "project": ["${cwd}/tsconfig.json"]
+      },
       "rules": {
-        "no-undef": "off"
+        "no-undef": "off",
+        "no-shadow": "off",
+        "@typescript-eslint/no-shadow": "error"
+      }
+    },
+    {
+      "files": ["src/modules/auth/auth.service.ts"],
+      "rules": {
+        "camelcase": "off",
+        "default-param-last": "off"
       }
     }
   ]
