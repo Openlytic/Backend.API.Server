@@ -1,6 +1,8 @@
 scalar Date
 scalar UUID
 
+directive @auth(roles: [String]) on FIELD_DEFINITION
+
 type HealthCheck {
   ok: Boolean!
   uptime: Float
