@@ -7,10 +7,7 @@ const run = async () => {
   if (!dataSource.isInitialized) {
     await dataSource.initialize()
   }
-  // Dev-only full reset: TypeORM defines Postgres enum types with its own naming,
-  // so drop the old (Sequelize-created) schema before syncing a clean one.
-  await dataSource.query('DROP SCHEMA IF EXISTS public CASCADE')
-  await dataSource.query('CREATE SCHEMA public')
+
   await dataSource.synchronize()
   console.log('[db] sync complete')
   await dataSource.destroy()
