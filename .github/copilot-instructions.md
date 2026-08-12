@@ -25,9 +25,11 @@ src/
 │   ├── schema.ts                # Auto-merges all .graphql typeDefs (loadFilesSync)
 │   ├── server.ts                # Apollo Server 4 config + context (JWT → user)
 │   ├── subscription.ts          # (reserved) PubSub
-│   ├── directives/auth.ts       # @auth directive (role checks from JWT)
+│   ├── directives/auth.ts       # @auth directive (role checks from JWT — reserved for GraphQL modules)
 │   ├── resolvers/{module}/      # {module}.query.ts, {module}.mutation.ts
 │   └── typeDefs/{module}.graphql
+├── middlewares/
+│   └── authorizer.ts            # Bearer access-token auth for REST routes → req.user (+ optional role check)
 ├── modules/
 │   ├── entities.ts              # Barrel: all TypeORM entities + dataSource registration
 │   ├── helpers.ts               # Barrel: 10 helper namespaces
@@ -35,6 +37,10 @@ src/
 │   ├── app-queue/               # Durable job table: hold/ready/sent/processing/completed/failed,
 │   │                            #   retry backoff (delay = retry_count*60, ≤5), stuck watchdog,
 │   │                            #   hold→ready chaining, SQS publish on the ready/retry transition
+│   ├── auth/                    # REST auth facade (thin wrapper over @openlytic/auth): register+OTP,
+│   │                            #   login, refresh/revoke tokens, change email/password, forgot password
+│   ├── auth-token/              # auth_token entity (access/refresh token rows)
+│   ├── verification-token/      # verification_token entity (6-digit OTP, 5-min expiry)
 │   ├── email/                   # createEmail → email_recipients → app_queue → SQS
 │   ├── email-analytic/          # materialized projection upsert + link summaries + deliverability report
 │   ├── email-recipient/         # fan-out target rows (type, send_status, provider_message_id)
@@ -44,15 +50,13 @@ src/
 │   ├── provider/                # OAuth URL building / token exchange
 │   ├── sync-history/            # sync-run audit (entity ready; inbox sync on roadmap)
 │   ├── tracked-link/            # per-email rewritten links (unique email_id+target_url)
-│   ├── auth/                    # sign up / log in
-│   └── user/                    # app user
-├── routes/index.ts              # GET /health, GET /oauth/callback
+│   └── user/                    # user entity + user.controller.ts + user.router.ts (REST auth wiring)
+├── routes/index.ts              # GET /health + /auth/* (userRouter); OAuth callback in provider module
 └── utils/
     ├── database.ts              # DataSource, getRepository(entity, tx), useTransaction()
     ├── error.ts                 # CustomError(statusCode, message)
     ├── sqs-client.ts            # publishSendJob / publishTrackingEvent (SQS transport)
     ├── crypto.ts                # token hashing / tracking signature
-    ├── jwt.ts                   # access + refresh tokens
     └── logger.ts                # winston
 ```
 
@@ -84,6 +88,8 @@ src/
 | Error codes             | UPPER_SNAKE_CASE strings                      | `INTEGRATION_NOT_FOUND`, `EMAIL_NOT_FOUND`            |
 | Module folders          | kebab-case                                    | `email-analytic/`, `tracked-link/`                    |
 | GraphQL operations      | `create{Entity}` / `{entities}` queries       | `createEmail`, `emails`, `emailAnalytics`             |
+
+**Exception — the auth module (`src/modules/auth/auth.service.ts`) uses the `@openlytic/auth` (Gain.io) **snake_case** params contract verbatim** (`user_id`, `access_token`, `custom_claims`, `new_email`, `old_passwords`). It carries a **file-level `/* eslint-disable camelcase, default-param-last */`** with a rationale comment — `.eslintrc.json` global rules are NOT relaxed. Do not globalize camelCase here.
 
 ### Import Rules (CRITICAL)
 
@@ -142,10 +148,14 @@ Keep this envelope intact. New job categories must follow the same hold→ready�
 
 ### Authentication & Authorization
 
-- JWT validated in `src/graphql/server.ts` context (via `src/utils/jwt.ts`); `context.user` carries identity + role
-- GraphQL `@auth` directive (`directives/auth.ts`) enforces roles on fields: `@auth(roles: ["admin", "org_owner"])`
-- Multi-tenancy enforced via `organization_id`/`user_id` **derived from the JWT** — never accepted as GraphQL input
-- Passwords hashed (bcrypt), provider tokens encrypted (`src/utils/crypto.ts`)
+- **JWT issued/verified by the `@openlytic/auth` package** (`configureRepositoryAccessor` wired in `src/modules/auth/auth-repository.ts`, called at boot in `server.ts`). Tokens carry `roles`, `sub`, `user_id`/`contact_id`, `org_id`, `org_brand_id`.
+- **The auth surface is REST, not GraphQL** — `src/modules/user/user.router.ts` (mounted at `/auth`) + `user.controller.ts` mirror Gain.io's `user.router.js`/`user.controller.js`: `/auth/register`, `/auth/login`, `/auth/refresh-token`, `/auth/logout`, `/auth/change-password`, `/auth/forgot-password`, `/auth/verify-forgot-password`, etc. Responses are `{ data, message }` (200) or `CustomError` status codes. `src/graphql/typeDefs/auth.graphql` + `resolvers/auth/` were removed — do not reintroduce a GraphQL auth surface.
+- **REST endpoints are protected with `authorizer()`** (`src/middlewares/authorizer.ts`) — verifies the Bearer access token via `authService.verifyToken({ token, type: 'access_token' })`, sets `req.user` (JWT claims incl. `roles`), optional `authorizer(['admin', 'manager'])` role gate. Missing/invalid token → `401`, insufficient roles → `403`.
+- **GraphQL stays JWT-aware for future modules**: `buildContext` in `src/graphql/server.ts` verifies the token and exposes `context.user` (with `roles`/`role` for the `@auth` directive). `src/utils/jwt.ts` was removed — do not reintroduce a parallel JWT layer.
+- GraphQL `@auth` directive (`directives/auth.ts` + SDL declaration in `typeDefs/base.graphql`) is **retained but currently unused** — reserved for email/tracking modules.
+- Multi-tenancy enforced via `organization_id`/`user_id` **derived from the JWT** — never accepted as request input.
+- **Roles are computed server-side** (`auth.service.ts` defaults to `['user']`; `loginAnApplication` issues `public`/`service_manager` for app users). Client-supplied `roles` in login/register input is rejected.
+- Passwords hashed (bcrypt via the auth package), provider tokens encrypted (`src/utils/crypto.ts`)
 
 ### GraphQL Schema File Ordering (`.graphql` files)
 
@@ -185,6 +195,16 @@ Fields in ascending **alphabetical order**, two exceptions:
 
 7. **CORS `origin: true`** — API server behind infrastructure access controls. Do not flag as a security issue.
 
+8. **`src/modules/auth/auth.service.ts`** — the snake_case params contract, the file-level `/* eslint-disable camelcase, default-param-last */`, and the server-side roles derivation (`custom_claims.roles` is never taken from client input). Executed via the `@openlytic/auth` package.
+
+9. **`configureAuthRepositories()`** (`src/modules/auth/auth-repository.ts`) — the name→entity accessor seam that mirrors Gain.io's `sequelize.models.<name>`. Do not replace with entity-class-keyed lookups or call it per-request.
+
+10. **`src/utils/jwt.ts` was deleted** — the auth package owns JWT issue/verify. Do not reintroduce a parallel JWT helper; the REST `authorizer()` and GraphQL `buildContext` are the only token-verification points.
+
+11. **`src/middlewares/authorizer.ts`** — the REST auth gate (Bearer → `authService.verifyToken` → `req.user`, `401`/`403` semantics). Do not reimplement token verification inline in controllers.
+
+12. **`src/modules/user/user.router.ts` / `user.controller.ts`** — the `/auth` REST facade mirrors Gain.io's `user.router.js`/`user.controller.js` routes and `{ data, message }` response shapes. Do not convert it to GraphQL.
+
 ### ALWAYS Flag
 
 1. **Missing `transaction` parameter** in any service/helper function that performs writes
@@ -194,8 +214,10 @@ Fields in ascending **alphabetical order**, two exceptions:
 5. **Default exports** in non-resolver/non-schema files
 6. **Semicolons, double quotes, or trailing commas** (prettier rules)
 7. **Raw SQL string-concatenating user input** (must be parameterized)
-8. **Missing `@auth` directive** on new mutations / sensitive queries
+8. **Sensitive REST route without `authorizer()`** — or a GraphQL mutation/query without `@auth` (email/tracking modules) — on auth/tenant data
 9. **Entity without the uuid `@PrimaryColumn` + `@BeforeInsert generateId()` convention**
+10. **`roles` (or any authorization claim) accepted from client input** in auth endpoints — auth claims must be derived server-side (`auth.service.ts`)
+11. **A second JWT/`verify` layer** alongside `@openlytic/auth` (e.g. a resurrected `src/utils/jwt.ts`)
 
 ---
 
@@ -208,6 +230,10 @@ Fields in ascending **alphabetical order**, two exceptions:
 5. **`email.service.ts` `to_emails`/`cc_emails`/`bcc_emails` arrays are the source of truth** — `email_recipients` rows are the per-recipient projection; edits must stay consistent with Gain.io semantics.
 6. **Inbox sync (`sync_emails` → `sync_history`) is out of scope** — the entity/table exists and is registered; there is intentionally no service or queue `sync_emails` trigger yet.
 
+7. **`@openlytic/auth` reads its env directly from `process.env`**: `ACCESS_TOKEN_EXPIRY` (default `1d`), `REFRESH_TOKEN_EXPIRY` (default `30d`), `APPLICATION_TOKEN`, `JWT_SECRET`, `APP_URL`. These are documented in `.env.sample`; do not remove them.
+
+8. **Login roles default to `['user']`** in `auth.service.ts` — the `app_user`/`organization_user`/roles tables (with per-user roles) are not ported yet. `loginAnApplication` provides `public`/`service_manager` for the seeded app users. Admin REST routes (`/auth/set-user-email`, `/auth/set-user-password`) exist behind `authorizer(['admin', 'manager', ...])` but are unreachable until those roles are granted (future branch).
+
 ---
 
 ## Technology Stack Reference
@@ -219,16 +245,16 @@ Fields in ascending **alphabetical order**, two exceptions:
 | GraphQL         | Apollo Server 4, @graphql-tools, graphql-ws       |
 | Database        | PostgreSQL via TypeORM 0.3                        |
 | Language        | TypeScript (tsx for dev, esbuild for build → CJS) |
-| Auth            | jsonwebtoken, bcryptjs                            |
+| Auth            | `@openlytic/auth` (bcryptjs, jsonwebtoken) — file: dependency on ../Backend.Service.Auth |
 | Cloud           | AWS (SQS) — localstack for local dev              |
 | Lint            | ESLint 8 + Prettier                               |
-| Package Manager | npm                                               |
+| Package Manager | pnpm                                              |
 
 ---
 
 ## Self-Maintenance — Keeping This File Current
 
-<!-- LAST AUDITED: 2026-08-10 -->
+<!-- LAST AUDITED: 2026-08-12 -->
 
 This file is the single source of truth for Copilot and agent behavior. **Agents MUST update this file as part of any change that alters the facts documented here.** Do not treat this file as read-only — it is a living document.
 
