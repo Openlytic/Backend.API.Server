@@ -94,9 +94,15 @@ A plan is **not required** for:
 
 - All `.graphql` type definitions are **auto-merged** by `src/graphql/schema.ts` (via `loadFilesSync`) — never hand-register typeDefs
 - New resolvers must be registered in `src/graphql/resolvers/index.ts`
-- The **`@auth` directive** is applied at the schema level (`directives/auth.ts`); mutations and sensitive queries declare `@auth(roles: [...])` in the typeDefs
+- The **`@auth` directive** is applied at the schema level (`directives/auth.ts`); mutations and sensitive queries declare `@auth(roles: [...])` in the typeDefs (reserved for email/tracking modules — the auth feature is REST)
 - **File ordering in `.graphql` files**: All type/input/enum definitions must come **first**, followed by the operation blocks (Query/Mutation/Subscription) at the **bottom**.
 - **Field ordering within types**: `id` always **first**; `created_at`/`updated_at` always **last** (in that order); other fields in **ascending alphabetical order**
+
+### REST Operations (auth facade)
+
+- The auth surface is **REST**, not GraphQL: `src/modules/user/user.router.ts` mounted at `/auth` in `src/routes/index.ts` + `user.controller.ts` (mirrors Gain.io's `user.router.js`/`user.controller.js`; responses `{ data, message }`)
+- New REST routes that touch auth/tenant data must be gated with **`authorizer()`** (`src/middlewares/authorizer.ts`, optional role list) — never reimplement token verification in a controller
+- Keep auth controller handlers thin: `useTransaction(...)` → service → `res.status(200).json(...)`; `CustomError` propagates to the error middleware
 
 ---
 
@@ -109,6 +115,7 @@ A plan is **not required** for:
 | `Dockerfile` / `docker-compose.yml` | Container/build definitions — affects all environments                              |
 | `.env.sample`                       | Environment variable template — shared across the team                              |
 | `src/utils/database.ts`             | DataSource + pool config, `useTransaction()` lock_timeout — critical infrastructure |
+| `src/middlewares/authorizer.ts`     | REST auth gate — security-critical, token verification + role checks               |
 | `src/graphql/directives/auth.ts`    | Auth directive — security-critical, affects all endpoints                           |
 | `src/modules/entities.ts`           | Centralized entity registry — fragile, high-impact                                  |
 | `package.json` (dependencies)       | Adding/removing packages requires discussion                                        |
@@ -160,6 +167,13 @@ When creating a new module (e.g., `analytics`), the agent MUST create the follow
    - Register in `src/graphql/resolvers/index.ts` (both Query and Mutation spreads)
 
 9. **REST (only if needed)**: route in `src/routes/index.ts`
+
+### Auth module exception (first populated module — `feature/auth`, REST facade)
+
+- **Never reimplement auth logic locally.** `src/modules/auth/` only wires + delegates to the **`@openlytic/auth`** package (`file:` dependency on `../Backend.Service.Auth`): `auth-repository.ts` maps package entity names → TypeORM entities via `configureAuthRepositories()` (called in `server.ts`), `auth.service.ts` wraps the package and maps `Error('UPPER_SNAKE')` → `CustomError`.
+- The surface is **REST via `src/modules/user/`** (`user.controller.ts` + `user.router.ts`, mounted at `/auth`) — mirror Gain.io route names + `{ data, message }` responses. There is **no `auth.graphql` / `resolvers/auth/`**.
+- Keep Gain's **snake_case** params/fields verbatim in the auth surface; the wrapper carries a file-level `eslint-disable camelcase, default-param-last`.
+- **Roles are server-derived only** (default `['user']`); never accept `roles` from request input. Bearer tokens are verified only in `authorizer()` (`src/middlewares/authorizer.ts`) and GraphQL `buildContext`; the deleted `src/utils/jwt.ts` must stay deleted.
 
 ---
 
@@ -232,7 +246,7 @@ If a change to `src/modules/entities.ts` breaks:
 
 ## Self-Maintenance — Keeping Instruction Files Current
 
-<!-- LAST AUDITED: 2026-08-10 -->
+<!-- LAST AUDITED: 2026-08-12 -->
 
 Both this file (`.agents/instructions.md`) and `.github/copilot-instructions.md` are **living documents**. Agents MUST update them as part of any change that makes their content inaccurate.
 
