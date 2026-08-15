@@ -32,8 +32,8 @@ src/
 │   └── authorizer.ts            # Bearer access-token auth for REST routes → req.user (+ optional role check)
 ├── modules/
 │   ├── entities.ts              # Barrel: all TypeORM entities + dataSource registration
-│   ├── helpers.ts               # Barrel: 10 helper namespaces
-│   ├── services.ts              # Barrel: 7 service namespaces
+│   ├── helpers.ts               # Barrel: helper namespaces (common, organization)
+│   ├── services.ts              # Barrel: service namespaces (auth, organization)
 │   ├── app-queue/               # Durable job table: hold/ready/sent/processing/completed/failed,
 │   │                            #   retry backoff (delay = retry_count*60, ≤5), stuck watchdog,
 │   │                            #   hold→ready chaining, SQS publish on the ready/retry transition
@@ -46,7 +46,7 @@ src/
 │   ├── email-recipient/         # fan-out target rows (type, send_status, provider_message_id)
 │   ├── email-tracking/          # mail_tracking_events entity (10 event kinds)
 │   ├── integration/             # gmail/outlook OAuth + encrypted tokens
-│   ├── organization/            # tenant
+│   ├── organization/            # tenant (organization + reserved_sub_domain + organization_user tenancy join)
 │   ├── provider/                # OAuth URL building / token exchange
 │   ├── sync-history/            # sync-run audit (entity ready; inbox sync on roadmap)
 │   ├── tracked-link/            # per-email rewritten links (unique email_id+target_url)
@@ -152,10 +152,18 @@ Keep this envelope intact. New job categories must follow the same hold→ready�
 - **The auth surface is REST, not GraphQL** — `src/modules/user/user.router.ts` (mounted at `/auth`) + `user.controller.ts` mirror Gain.io's `user.router.js`/`user.controller.js`: `/auth/register`, `/auth/login`, `/auth/refresh-token`, `/auth/logout`, `/auth/change-password`, `/auth/forgot-password`, `/auth/verify-forgot-password`, etc. Responses are `{ data, message }` (200) or `CustomError` status codes. `src/graphql/typeDefs/auth.graphql` + `resolvers/auth/` were removed — do not reintroduce a GraphQL auth surface.
 - **REST endpoints are protected with `authorizer()`** (`src/middlewares/authorizer.ts`) — verifies the Bearer access token via `authService.verifyToken({ token, type: 'access_token' })`, sets `req.user` (JWT claims incl. `roles`), optional `authorizer(['admin', 'manager'])` role gate. Missing/invalid token → `401`, insufficient roles → `403`.
 - **GraphQL stays JWT-aware for future modules**: `buildContext` in `src/graphql/server.ts` verifies the token and exposes `context.user` (with `roles`/`role` for the `@auth` directive). `src/utils/jwt.ts` was removed — do not reintroduce a parallel JWT layer.
-- GraphQL `@auth` directive (`directives/auth.ts` + SDL declaration in `typeDefs/base.graphql`) is **retained but currently unused** — reserved for email/tracking modules.
+- GraphQL `@auth` directive (`directives/auth.ts` + SDL declaration in `typeDefs/base.graphql`) gates the organization module queries/mutations (`roles: ["admin", "manager"]`) and is **reserved for email/tracking modules**.
 - Multi-tenancy enforced via `organization_id`/`user_id` **derived from the JWT** — never accepted as request input.
 - **Roles are computed server-side** (`auth.service.ts` defaults to `['user']`; `loginAnApplication` issues `public`/`service_manager` for app users). Client-supplied `roles` in login/register input is rejected.
 - Passwords hashed (bcrypt via the auth package), provider tokens encrypted (`src/utils/crypto.ts`)
+
+### Organization / tenancy (`src/modules/organization/` + `src/graphql/resolvers/organization/` — `feature/multi-tenancy`)
+
+- **GraphQL-first, mirroring Gain.io's organization module** (unlike the REST auth facade). Surface: `createAnOrganization` / `updateAnOrganization` / `deleteAnOrganization` mutations + `getAnOrganization` / `getOrganizations` queries in `src/graphql/typeDefs/organization.graphql`, resolvers in `src/graphql/resolvers/organization/`, mutations wrapped in `useTransaction()` and gated with `@auth(roles: ["admin", "manager"])`.
+- Entities: `organization` (OrganizationEntity), `reserved_sub_domain` (ReservedSubDomainEntity), `organization_user` (OrganizationUserEntity tenancy join). All follow the `@PrimaryColumn` uuid + `@BeforeInsert generateId()` convention.
+- **REST complement** (mirrors Gain.io's `organization.router.js` — 3 routes only): `GET /organization?sub_domain=…`, `GET /organization/check-availability?sub_domain=…`, `POST /organization` (create org for a user, `{ user_id, org_name, sub_domain, location, time_zone }` → 201). `POST /organization` is rate-limited (3 req/min) and NOT `authorizer()`-gated (bootstrap path, mirrors Gain.io).
+- **Snake_case Gain contract:** `organization.helper.ts` / `organization.service.ts` carry a file-level `/* eslint-disable camelcase, default-param-last */` — the same exception as `auth.service.ts`. `common.helper.ts` `validateDomain` carries a scoped `/* eslint-disable camelcase */`.
+- **Simplified from Gain.io (deferred modules):** org settings/files (logo/icon keys → `null`), location entity, plans, roles/permissions, work schedules, SES tenant, PostHog, mock-data seed, subscription/usage, `reset*` mutations and the realtime subscription. `getAnOrganizationBySubDomain` returns `{ id, created_at, logo_key: null, logo_icon_key: null, name, sub_domain }`.
 
 ### GraphQL Schema File Ordering (`.graphql` files)
 
@@ -254,7 +262,7 @@ Fields in ascending **alphabetical order**, two exceptions:
 
 ## Self-Maintenance — Keeping This File Current
 
-<!-- LAST AUDITED: 2026-08-12 -->
+<!-- LAST AUDITED: 2026-08-16 -->
 
 This file is the single source of truth for Copilot and agent behavior. **Agents MUST update this file as part of any change that alters the facts documented here.** Do not treat this file as read-only — it is a living document.
 

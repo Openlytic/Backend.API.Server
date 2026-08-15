@@ -104,6 +104,13 @@ A plan is **not required** for:
 - New REST routes that touch auth/tenant data must be gated with **`authorizer()`** (`src/middlewares/authorizer.ts`, optional role list) — never reimplement token verification in a controller
 - Keep auth controller handlers thin: `useTransaction(...)` → service → `res.status(200).json(...)`; `CustomError` propagates to the error middleware
 
+### Organization module (GraphQL-first, `feature/multi-tenancy`)
+
+- The organization module is **GraphQL-first, mirroring Gain.io** (unlike the REST auth facade): typeDefs in `src/graphql/typeDefs/organization.graphql`, resolvers in `src/graphql/resolvers/organization/`, mutations wrapped in `useTransaction()` and gated with `@auth(roles: ["admin", "manager"])`.
+- REST is a 3-route complement mounted at `/organization` in `src/routes/index.ts` (`GET /`, `GET /check-availability`, `POST /`) mirroring Gain.io's `organization.router.js`; `POST /` is rate-limited (3 req/min) and NOT `authorizer()`-gated (bootstrap path, mirrors Gain.io).
+- Entities: `organization`, `reserved_sub_domain`, `organization_user` — all under `src/modules/organization/`, registered in `entities.ts`.
+- `organization.helper.ts` / `organization.service.ts` keep Gain.io's snake_case contract verbatim (file-level `/* eslint-disable camelcase, default-param-last */`, same exception as auth).
+
 ---
 
 ## Scope Limits
@@ -246,7 +253,7 @@ If a change to `src/modules/entities.ts` breaks:
 
 ## Self-Maintenance — Keeping Instruction Files Current
 
-<!-- LAST AUDITED: 2026-08-12 -->
+<!-- LAST AUDITED: 2026-08-16 -->
 
 Both this file (`.agents/instructions.md`) and `.github/copilot-instructions.md` are **living documents**. Agents MUST update them as part of any change that makes their content inaccurate.
 
