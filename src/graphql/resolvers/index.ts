@@ -1,7 +1,12 @@
-// Resolver aggregates. Populated per feature branch.
+import organizationMutations from 'src/graphql/resolvers/organization/organization.mutation'
+import organizationQueries from 'src/graphql/resolvers/organization/organization.query'
+
 export const resolvers = {
   Query: {
-    health: () => ({ ok: true, uptime: process.uptime() })
+    health: () => ({ ok: true, uptime: process.uptime() }),
+    ...organizationQueries
   },
-  Mutation: {}
+  Mutation: {
+    ...organizationMutations
+  }
 }

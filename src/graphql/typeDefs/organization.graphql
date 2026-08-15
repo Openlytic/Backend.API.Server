@@ -1,0 +1,57 @@
+type Organization {
+  id: UUID
+  created_at: Date
+  name: String
+  status: OrganizationStatusEnum
+  sub_domain: String
+  updated_at: Date
+}
+
+enum OrganizationStatusEnum {
+  active
+  deleting
+  inactive
+  resetting
+}
+
+input OrganizationCreateInput {
+  location: LocationUpdateInputType!
+  org_name: String!
+  owner_id: UUID
+  sub_domain: String!
+  time_zone: String!
+  start_with_dummy_data: Boolean
+}
+
+input OrganizationsQueryInput {
+  org_statuses: [OrganizationStatusEnum!]
+  search_keyword: String
+}
+
+type OrganizationQuerySchema {
+  data: [Organization]
+  meta_data: MetaDataQuerySchema
+}
+
+input OrganizationUpdateInputType {
+  org_name: String
+  status: CommonStatusEnum
+  sub_domain: String
+}
+
+input DeleteOrganizationInput {
+  org_id: UUID!
+}
+
+extend type Mutation {
+  createAnOrganization(inputData: OrganizationCreateInput!): Organization @auth(roles: ["admin", "manager"])
+  updateAnOrganization(queryData: CommonEntityIdQueryDataType!, inputData: OrganizationUpdateInputType!): Organization
+    @auth(roles: ["admin", "manager"])
+  deleteAnOrganization(inputData: DeleteOrganizationInput!): Organization @auth(roles: ["admin", "manager"])
+}
+
+extend type Query {
+  getAnOrganization(queryData: CommonEntityIdQueryDataType): Organization @auth(roles: ["admin", "manager"])
+  getOrganizations(queryData: OrganizationsQueryInput, optionData: OptionDataType): OrganizationQuerySchema
+    @auth(roles: ["admin", "manager"])
+}
