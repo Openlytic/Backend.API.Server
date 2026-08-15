@@ -1,0 +1,50 @@
+scalar Array
+scalar Number
+
+input OptionDataType {
+  limit: Int
+  offset: Int
+  order: [Array]
+}
+
+input CommonEntityIdQueryDataType {
+  entity_id: UUID!
+}
+
+type MetaDataQuerySchema {
+  filtered_rows: Int
+  total_rows: Int
+}
+
+type CommonUserDataType {
+  id: UUID
+  first_name: String
+  email: String
+  last_name: String
+}
+
+enum CommonStatusEnum {
+  active
+  inactive
+}
+
+enum LocationTypeEnum {
+  home
+  work
+}
+
+input LocationUpdateInputType {
+  entity_id: UUID
+  address: String!
+  city: String
+  country: String
+  country_code: String
+  google_place_id: String
+  google_place_ids: [String]
+  latitude: Number
+  longitude: Number
+  place_name: String
+  postal_code: String
+  sub_locality: String
+  type: LocationTypeEnum
+}
