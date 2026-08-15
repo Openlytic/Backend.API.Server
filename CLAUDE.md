@@ -57,7 +57,15 @@ Strict pipeline **Entity → Helper → Service → Resolver**, TypeScript files
 - `auth-repository.ts` → `configureAuthRepositories()` maps the package's entity names (`user` / `auth_token` / `verification_token`) to the real TypeORM entities; called once at boot in `server.ts`.
 - `auth.service.ts` is a thin wrapper: derives identity from the JWT context (`req.user` for REST), keeps Gain's **snake_case params verbatim** (file-level `eslint-disable camelcase, default-param-last` with rationale), maps library `Error('UPPER_SNAKE')` → `CustomError(status, code)`, and **never accepts `roles` from clients** (default `['user']`; `loginAnApplication` gives `public`/`service_manager`).
 - **REST auth gate:** `src/middlewares/authorizer.ts` verifies the Bearer access token → sets `req.user`; `authorizer(['admin', 'manager'])` gates admin routes (`/auth/set-user-email`, `/auth/set-user-password`).
-- Entities: `user/` (UserEntity) + `auth/` (`auth_token`, `verification_token`). GraphQL `@auth` directive + `buildContext` are retained (currently unused) for the email/tracking modules.
+- Entities: `user/` (UserEntity) + `auth/` (`auth_token`, `verification_token`). GraphQL `@auth` directive + `buildContext` are retained for the email/tracking modules.
+
+### Organization (`src/modules/organization/` + `src/graphql/resolvers/organization/` — `feature/multi-tenancy`)
+
+- **GraphQL-first, mirroring Gain.io** (unlike the REST auth facade): `createAnOrganization` / `updateAnOrganization` / `deleteAnOrganization` mutations + `getAnOrganization` / `getOrganizations` queries in `src/graphql/typeDefs/organization.graphql`, resolvers in `src/graphql/resolvers/organization/`, mutations wrapped in `useTransaction()` and gated with `@auth(roles: ["admin", "manager"])`.
+- Entities: `organization` (OrganizationEntity), `reserved_sub_domain` (ReservedSubDomainEntity), `organization_user` (OrganizationUserEntity tenancy join) — all under `src/modules/organization/`, registered in `entities.ts`.
+- **REST complement** (mirrors Gain.io, 3 routes): `GET /organization?sub_domain=…`, `GET /organization/check-availability?sub_domain=…`, `POST /organization` (create org for a user → 201). `POST /` rate-limited 3 req/min and NOT `authorizer()`-gated (bootstrap path, mirrors Gain.io).
+- `organization.helper.ts` / `organization.service.ts` keep Gain's **snake_case contract verbatim** (file-level `/* eslint-disable camelcase, default-param-last */`); `common.helper.ts` `validateDomain` has a scoped `/* eslint-disable camelcase */`.
+- **Simplified from Gain.io:** org settings/files (logo/icon keys → `null`), plans, roles/permissions, work schedules, SES tenant, PostHog, mock-data seed, subscription/usage, `reset*` mutations, realtime subscription. `location` stays **required in the create input** (Gain's contract, mirrored via `LocationUpdateInputType`) but is **not persisted** — no location entity.
 
 ### Shared layer (ported from Gain.IO)
 
@@ -69,8 +77,8 @@ Strict pipeline **Entity → Helper → Service → Resolver**, TypeScript files
 ### Cross-cutting things that bite (read before editing)
 
 - **Tenancy:** `organization_id`/`user_id` come from the JWT (`req.user` on REST, `context.user` on GraphQL) — **never accept them as request input** (tenant-crossing risk).
-- **Auth context:** REST routes use `authorizer()` (`src/middlewares/authorizer.ts`) — verifies the Bearer access token via `authService.verifyToken({ token, type: 'access_token' })` (DB row + JWT), sets `req.user` (claims incl. `roles`). GraphQL `buildContext` does the same for future `@auth` modules, mapping `roles` into `context.user.roles` **and** `context.user.role`. `src/utils/jwt.ts` was deleted — the auth package owns JWT issue/verify.
-- **`@auth` directive SDL** (`@auth(roles: [...]) on FIELD_DEFINITION`) is declared in `typeDefs/base.graphql`; `directives/auth.ts` enforces it. Currently unused (auth is REST) — reserved for email/tracking.
+- **Auth context:** REST routes use `authorizer()` (`src/middlewares/authorizer.ts`) — verifies the Bearer access token via `authService.verifyToken({ token, type: 'access_token' })` (DB row + JWT), sets `req.user` (claims incl. `roles`). GraphQL `buildContext` does the same for `@auth` modules (organization today), mapping `roles` into `context.user.roles` **and** `context.user.role`. `src/utils/jwt.ts` was deleted — the auth package owns JWT issue/verify.
+- **`@auth` directive SDL** (`@auth(roles: [...]) on FIELD_DEFINITION`) is declared in `typeDefs/base.graphql`; `directives/auth.ts` enforces it. Gates the organization module; reserved for email/tracking.
 - **`CustomError(statusCode, message)`** is the error type (`src/utils/error`). Throw it in services for client-visible codes.
 - **`useTransaction()`** (`src/utils/database.ts`) sets a 40 s `lock_timeout` outside the transaction — intentional, mirroring Gain.io.
 - **SQS envelope:** the durable `app_queue` row is the source of truth; SQS is only transport. The published message is `{ event, queue_id, params }` (legacy `{ job_type, payload }` still supported by the email service). API never publishes anything without an `app_queue` row.
