@@ -31,6 +31,16 @@ app.use(
   })
 )
 
+app.use(
+  '/organization',
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 3,
+    message: 'Too many requests from this IP, please try again after some moments',
+    skip: (req) => req.method !== 'POST'
+  })
+)
+
 // REST routes (OAuth callback, health, etc.)
 app.use('/', routes)
 

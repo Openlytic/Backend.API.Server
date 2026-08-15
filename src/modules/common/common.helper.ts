@@ -22,6 +22,44 @@ export const isValidatePhoneNumber = (phoneNumber = ''): boolean => {
   return /^(\+|\d)[0-9]{5,}$/.test(cleaned)
 }
 
+// Built-in port of the `slugify` package (lower, trim, space-to-dash). No external dep.
+export const slugify = (
+  input = '',
+  { replacement = '-', lower = true, trim = true }: { replacement?: string; lower?: boolean; trim?: boolean } = {}
+): string => {
+  let slug = String(input ?? '')
+  if (trim) slug = slug.trim()
+  if (lower) slug = slug.toLowerCase()
+  slug = slug
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .replace(/[\s_]+/g, replacement)
+    .replace(new RegExp(`${replacement}+`, 'g'), replacement)
+  return slug
+}
+
+export const getAppDomainName = (): string => process.env.APP_DOMAIN || 'openlytic.app'
+
+const FQDN_REGEX = /^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$/
+
+export const validateDomain = (params: { domain?: string; sub_domain?: string; user_input_domain?: string }): void => {
+  const { domain, sub_domain: subDomain, user_input_domain: userInputDomain = '' } = params || {}
+
+  const specialCharactersRegex = /[!@#$%^&*]/
+  if (userInputDomain && specialCharactersRegex.test(userInputDomain)) {
+    throw new CustomError(400, 'SPECIAL_CHARACTERS_NOT_ALLOWED')
+  }
+
+  if (subDomain && (subDomain.includes('--') || subDomain.includes('.'))) {
+    throw new CustomError(400, 'INVALID_SUBDOMAIN_FORMAT')
+  }
+
+  const domainToValidate = domain || (subDomain && `${subDomain}.${getAppDomainName()}`)
+
+  if (!domainToValidate || !FQDN_REGEX.test(domainToValidate)) {
+    throw new CustomError(400, 'INVALID_DOMAIN')
+  }
+}
+
 export const getFirstLetterUpperCase = (str: string): string => {
   if (!str) return ''
   return str.charAt(0).toUpperCase() + str.slice(1)
