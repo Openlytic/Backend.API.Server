@@ -1,5 +1,6 @@
 import { Router } from 'express'
 
+import { organizationRouter } from 'src/modules/organization/organization.router'
 import { userRouter } from 'src/modules/user/user.router'
 
 const router = Router()
@@ -11,6 +12,9 @@ router.get('/health', (req, res) => {
 
 // Auth Routes
 router.use('/auth', userRouter)
+
+// Organization Routes
+router.use('/organization', organizationRouter)
 
 export const restRoutes = router
 export const routes = router
