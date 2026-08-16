@@ -1,5 +1,6 @@
 scalar Array
 scalar Number
+scalar Object
 
 input OptionDataType {
   limit: Int
