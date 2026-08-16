@@ -40,20 +40,27 @@ jobs:
           cat /etc/os-release
 
       - name: Checkout source code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Checkout @openlytic/auth (sibling repo)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/Backend.Service.Auth
+          path: ../Backend.Service.Auth
 
       - name: Setup Node 22.x
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '22.x'
 
-      - name: Create .npmrc file for custom package
-        run: |
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
-          echo "@openlytic:registry=https://registry.npmjs.org/" >> .npmrc
-
       - name: Install PNPM
         run: npm i -g pnpm
+
+      - name: Build @openlytic/auth
+        working-directory: ../Backend.Service.Auth
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
 
       - name: Install dependencies
         run: pnpm i --frozen-lockfile

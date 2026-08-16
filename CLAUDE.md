@@ -6,21 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-Package manager: **npm** (repo lockfile is `package-lock.json`). This is a **TypeScript** project — `tsx` runs source directly, esbuild bundles it.
+Package manager: **pnpm** (repo lockfile is `pnpm-lock.yaml`). This is a **TypeScript** project — `tsx` runs source directly, esbuild bundles it.
 
 ```bash
-npm install                # install
-cp .env.sample .env        # first-time env setup (or .env.local, which overrides)
-npm run db:sync            # dev-only: DROPS the public schema + recreates from TypeORM entities
-npm run dev                # tsx watch src/server.ts (hot reload; PORT, default 8000)
-npm run lint               # eslint --quiet . --ignore-pattern build/ --ignore-pattern dist/
-npm run lint-fix           # eslint --fix
-npm run typecheck          # tsc --noEmit
-npm run build              # lint + typecheck + esbuild → dist/index.js (CJS)
+pnpm install              # install
+cp .env.sample .env       # first-time env setup (or .env.local, which overrides)
+pnpm run db:sync          # dev-only: DROPS the public schema + recreates from TypeORM entities
+pnpm run dev              # tsx watch src/server.ts (hot reload; PORT, default 8000)
+pnpm run lint             # eslint --quiet . --ignore-pattern build/ --ignore-pattern dist/
+pnpm run lint-fix         # eslint --fix
+pnpm run typecheck        # tsc --noEmit
+pnpm run build            # lint + typecheck + esbuild → dist/index.js (CJS)
 ```
 
-- **No test framework is configured** (no `test` script). Don't assume tests exist — verify with `npm run lint`, `npm run typecheck`, and by running `npm run dev`.
+- **No test framework is configured** (no `test` script). Don't assume tests exist — verify with `pnpm run lint`, `pnpm run typecheck`, and by running `pnpm run dev`.
 - husky: `pre-commit` runs lint + lint-staged (prettier on staged files); `pre-push` runs build (skippable via `BUILD_ON_PRE_PUSH=false` in `.env`/`.env.local`).
+- **CI (`.github/workflows/build.yml`):** PRs to `master`/`test`/`staging`/`release` run gitleaks + `pnpm i --frozen-lockfile` + `pnpm run build`. The `@openlytic/auth` `file:` dependency (`file:../Backend.Service.Auth`) is resolved by checking out `Backend.Service.Auth` as a sibling repo and building it (its `dist/` is gitignored) — keep that checkout step and the `file:` specifier in sync.
 
 ## Architecture (big picture)
 
