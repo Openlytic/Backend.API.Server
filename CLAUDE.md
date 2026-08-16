@@ -55,7 +55,7 @@ Strict pipeline **Entity → Helper → Service → Resolver**, TypeScript files
 
 - **Owns no JWT logic and exposes no GraphQL surface.** All logic delegates to the **`@openlytic/auth`** package (a `file:` dependency on `../Backend.Service.Auth`, its own repo). The surface is **REST**, mirroring Gain.io: `user.router.ts` mounted at `/auth` (register, login, refresh-token, logout, change-email/change-password, forgot-password family, app-login) with `user.controller.ts` returning `{ data, message }` and wrapping every op in `useTransaction()`.
 - `auth-repository.ts` → `configureAuthRepositories()` maps the package's entity names (`user` / `auth_token` / `verification_token`) to the real TypeORM entities; called once at boot in `server.ts`.
-- `auth.service.ts` is a thin wrapper: derives identity from the JWT context (`req.user` for REST), keeps Gain's **snake_case params verbatim** (file-level `eslint-disable camelcase, default-param-last` with rationale), maps library `Error('UPPER_SNAKE')` → `CustomError(status, code)`, and **never accepts `roles` from clients** (default `['user']`; `loginAnApplication` gives `public`/`service_manager`).
+- `auth.service.ts` is a thin wrapper: derives identity from the JWT context (`req.user` for REST), keeps Gain's **snake_case params verbatim** (`.eslintrc.json` per-file override turns `camelcase`/`default-param-last` off for this file — the only such override), maps library `Error('UPPER_SNAKE')` → `CustomError(status, code)`, and **never accepts `roles` from clients** (default `['user']`; `loginAnApplication` gives `public`/`service_manager`).
 - **REST auth gate:** `src/middlewares/authorizer.ts` verifies the Bearer access token → sets `req.user`; `authorizer(['admin', 'manager'])` gates admin routes (`/auth/set-user-email`, `/auth/set-user-password`).
 - Entities: `user/` (UserEntity) + `auth/` (`auth_token`, `verification_token`). GraphQL `@auth` directive + `buildContext` are retained for the email/tracking modules.
 
@@ -64,8 +64,16 @@ Strict pipeline **Entity → Helper → Service → Resolver**, TypeScript files
 - **GraphQL-first, mirroring Gain.io** (unlike the REST auth facade): `createAnOrganization` / `updateAnOrganization` / `deleteAnOrganization` mutations + `getAnOrganization` / `getOrganizations` queries in `src/graphql/typeDefs/organization.graphql`, resolvers in `src/graphql/resolvers/organization/`, mutations wrapped in `useTransaction()` and gated with `@auth(roles: ["admin", "manager"])`.
 - Entities: `organization` (OrganizationEntity), `reserved_sub_domain` (ReservedSubDomainEntity), `organization_user` (OrganizationUserEntity tenancy join) — all under `src/modules/organization/`, registered in `entities.ts`.
 - **REST complement** (mirrors Gain.io, 3 routes): `GET /organization?sub_domain=…`, `GET /organization/check-availability?sub_domain=…`, `POST /organization` (create org for a user → 201). `POST /` rate-limited 3 req/min and NOT `authorizer()`-gated (bootstrap path, mirrors Gain.io).
-- `organization.helper.ts` / `organization.service.ts` keep Gain's **snake_case contract verbatim** (file-level `/* eslint-disable camelcase, default-param-last */`); `common.helper.ts` `validateDomain` has a scoped `/* eslint-disable camelcase */`.
+- `organization.helper.ts` / `organization.service.ts` keep Gain's **snake_case contract verbatim** (snake_case appears only as object keys/properties — `camelcase.properties: 'never'` from the airbnb base allows them; locals stay camelCase); **no `eslint-disable` comments exist in the codebase**.
 - **Simplified from Gain.io:** org settings/files (logo/icon keys → `null`), plans, roles/permissions, work schedules, SES tenant, PostHog, mock-data seed, subscription/usage, `reset*` mutations, realtime subscription. `location` stays **required in the create input** (Gain's contract, mirrored via `LocationUpdateInputType`) but is **not persisted** — no location entity.
+
+### Email / send pipeline (`src/modules/email/` + `email-recipient/` + `app-queue/` — `feature/email`)
+
+- **GraphQL-first, mirroring Gain.io**: `createEmail` / `updateEmail` / `deleteEmail` mutations + `getAnEmail` / `getEmails` / `getEmailRecipients` / `getAnAppQueue` / `getAppQueues` queries. Email mutations/queries gated `@auth(roles: ["admin", "manager"])`; app-queue read queries gated `@auth(roles: ["service_manager"])`.
+- **Create pipeline** (`createEmailForMutation`): writes the `Email` (stage `sent` when to/cc/bcc exist, else `draft`), self-assigns `thread_id` when missing, fans out `email_recipients` (type `to`/`cc`/`bcc`, each requiring exactly one of `contact_org_id`/`contact_person_id`/`org_user_id` — Gain's `INVALID_RECIPIENT` contract), then `enqueueEmailSend` inserts an `app_queue` row (`category: 'send_email'`, `event: 'send_email'`, `destination: 'email'`, `params: { emailId, organizationId, integrationId, provider, toEmails, trackingEnabled }`). The row goes `ready` unless another `send_email` is running **for the same `org_id`** (hold-chaining, org-scoped — a deliberate multi-tenant fix over Gain's global category check).
+- **SQS transport** — `src/utils/sqs-client.ts` (`publishSendJob({ event, queue_id, params })`) publishes the envelope to SQS (`SQSClient` + `SendMessageCommand`; `SQS_QUEUE_URL`/`SQS_ENDPOINT`/`SQS_REGION`); if the queue is unreachable it falls back to a stub (log + fake `MessageId`) so dev runs offline. The `app_queue` row stays the durable source of truth. Delivery is handled by the **consumer repo `Openlytic.Backend.Service.Email`** — a **lambda mirroring Gain.IO's email service** (`src/index.ts` handler, SQS event source, SAM `template.yaml`): it re-reads the `app_queue` row from the same Postgres and sends via **Amazon SES** (`@aws-sdk/client-ses`; `EMAIL_DELIVERY_MODE=stub` in dev logs + fake MessageId instead of sending). Local dev invokes it via `npm run invoke -- <queue_id>`.
+- `updateEmail` handles `is_read`/`is_trashed` thread propagation, recipient add/remove, and stage→`sent` enqueue (`EMAIL_ALREADY_SENT` guard); `deleteEmail` deletes the whole thread + its recipients (queue rows are retained — durable source of truth).
+- **Skipped in core scope:** sender `from` recipient (the GraphQL context user carries no `email`/`org_user_id`), attachments, labels, integrations, standalone recipient mutations, tracked links, email tracking/analytic projections, inbox sync.
 
 ### Shared layer (ported from Gain.IO)
 
@@ -77,8 +85,8 @@ Strict pipeline **Entity → Helper → Service → Resolver**, TypeScript files
 ### Cross-cutting things that bite (read before editing)
 
 - **Tenancy:** `organization_id`/`user_id` come from the JWT (`req.user` on REST, `context.user` on GraphQL) — **never accept them as request input** (tenant-crossing risk).
-- **Auth context:** REST routes use `authorizer()` (`src/middlewares/authorizer.ts`) — verifies the Bearer access token via `authService.verifyToken({ token, type: 'access_token' })` (DB row + JWT), sets `req.user` (claims incl. `roles`). GraphQL `buildContext` does the same for `@auth` modules (organization today), mapping `roles` into `context.user.roles` **and** `context.user.role`. `src/utils/jwt.ts` was deleted — the auth package owns JWT issue/verify.
-- **`@auth` directive SDL** (`@auth(roles: [...]) on FIELD_DEFINITION`) is declared in `typeDefs/base.graphql`; `directives/auth.ts` enforces it. Gates the organization module; reserved for email/tracking.
+- **Auth context:** REST routes use `authorizer()` (`src/middlewares/authorizer.ts`) — verifies the Bearer access token via `authService.verifyToken({ token, type: 'access_token' })` (DB row + JWT), sets `req.user` (claims incl. `roles`). GraphQL `buildContext` does the same for `@auth` modules (organization + email today), mapping `roles` into `context.user.roles` **and** `context.user.role`. `src/utils/jwt.ts` is **unused dead code** (no imports) — the auth package owns JWT issue/verify.
+- **`@auth` directive SDL** (`@auth(roles: [...]) on FIELD_DEFINITION`) is declared in `typeDefs/base.graphql`; `directives/auth.ts` enforces it. Gates the organization and email modules (`roles: ["admin", "manager"]`); app-queue read queries use `roles: ["service_manager"]`; reserved for tracking.
 - **`CustomError(statusCode, message)`** is the error type (`src/utils/error`). Throw it in services for client-visible codes.
 - **`useTransaction()`** (`src/utils/database.ts`) sets a 40 s `lock_timeout` outside the transaction — intentional, mirroring Gain.io.
 - **SQS envelope:** the durable `app_queue` row is the source of truth; SQS is only transport. The published message is `{ event, queue_id, params }` (legacy `{ job_type, payload }` still supported by the email service). API never publishes anything without an `app_queue` row.
@@ -102,7 +110,7 @@ Auth env vars (`ACCESS_TOKEN_EXPIRY`, `REFRESH_TOKEN_EXPIRY`, `APPLICATION_TOKEN
 4. REST (rare): register route in `src/routes/index.ts`.
 5. Per copilot-instructions self-maintenance: update the instruction docs in the **same commit** when adding a module / convention / guardrail / env var.
 
-Module-naming exceptions (mirroring Gain.io's auth surface, applied in `src/modules/auth/`): tables `user`, `auth_token`, `verification_token` and their GraphQL fields use **snake_case** (DB contract) — package queries that keep snake_case param names carry a file-level `eslint-disable camelcase, default-param-last`.
+Module-naming exceptions (mirroring Gain.io's auth surface, applied in `src/modules/auth/`): tables `user`, `auth_token`, `verification_token` and their GraphQL fields use **snake_case** (DB contract) — only `auth.service.ts` has `camelcase`/`default-param-last` disabled (via `.eslintrc.json`); elsewhere snake_case appears only as object keys/properties.
 
 ## Do NOT change
 
@@ -111,7 +119,7 @@ Module-naming exceptions (mirroring Gain.io's auth surface, applied in `src/modu
 - `src/modules/entities.ts` export shape (the `entities` array + named re-exports); `syncDBEntities()` stays commented.
 - The SQS envelope contract (`{ event, queue_id, params }`) without updating both the API publisher and the email service handler.
 - `src/modules/auth/auth-repository.ts` (`configureAuthRepositories`), the snake_case auth contract in `auth.service.ts`, and `src/middlewares/authorizer.ts` — the auth package (`@openlytic/auth`) owns the business logic.
-- Reintroducing `src/utils/jwt.ts` or any parallel JWT layer — `authorizer()` (REST) and `buildContext` (GraphQL) are the only verification points.
+- Reintroducing any parallel JWT layer (including importing the existing unused `src/utils/jwt.ts`) — `authorizer()` (REST) and `buildContext` (GraphQL) are the only verification points.
 - Converting the `/auth` REST facade (`user.router.ts`/`user.controller.ts`) back to GraphQL.
 
 ## Automation in this repo

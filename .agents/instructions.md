@@ -94,7 +94,7 @@ A plan is **not required** for:
 
 - All `.graphql` type definitions are **auto-merged** by `src/graphql/schema.ts` (via `loadFilesSync`) — never hand-register typeDefs
 - New resolvers must be registered in `src/graphql/resolvers/index.ts`
-- The **`@auth` directive** is applied at the schema level (`directives/auth.ts`); mutations and sensitive queries declare `@auth(roles: [...])` in the typeDefs (reserved for email/tracking modules — the auth feature is REST)
+- The **`@auth` directive** is applied at the schema level (`directives/auth.ts`); mutations and sensitive queries declare `@auth(roles: [...])` in the typeDefs (organization + email use `["admin", "manager"]`; app-queue reads use `["service_manager"]`; reserved for tracking — the auth feature is REST)
 - **File ordering in `.graphql` files**: All type/input/enum definitions must come **first**, followed by the operation blocks (Query/Mutation/Subscription) at the **bottom**.
 - **Field ordering within types**: `id` always **first**; `created_at`/`updated_at` always **last** (in that order); other fields in **ascending alphabetical order**
 
@@ -109,7 +109,14 @@ A plan is **not required** for:
 - The organization module is **GraphQL-first, mirroring Gain.io** (unlike the REST auth facade): typeDefs in `src/graphql/typeDefs/organization.graphql`, resolvers in `src/graphql/resolvers/organization/`, mutations wrapped in `useTransaction()` and gated with `@auth(roles: ["admin", "manager"])`.
 - REST is a 3-route complement mounted at `/organization` in `src/routes/index.ts` (`GET /`, `GET /check-availability`, `POST /`) mirroring Gain.io's `organization.router.js`; `POST /` is rate-limited (3 req/min) and NOT `authorizer()`-gated (bootstrap path, mirrors Gain.io).
 - Entities: `organization`, `reserved_sub_domain`, `organization_user` — all under `src/modules/organization/`, registered in `entities.ts`.
-- `organization.helper.ts` / `organization.service.ts` keep Gain.io's snake_case contract verbatim (file-level `/* eslint-disable camelcase, default-param-last */`, same exception as auth).
+- `organization.helper.ts` / `organization.service.ts` keep Gain.io's snake_case contract verbatim (snake_case as object keys/properties only — `camelcase.properties: 'never'` allows them; locals stay camelCase; **no `eslint-disable` comments exist in the codebase**).
+
+### Email module (`feature/email`)
+
+- GraphQL-first: `createEmail`/`updateEmail`/`deleteEmail` mutations + `getAnEmail`/`getEmails`/`getEmailRecipients`/`getAnAppQueue`/`getAppQueues` queries in `src/graphql/typeDefs/` + `src/graphql/resolvers/{email,email-recipient,app-queue}/`. Email mutations/queries gated `@auth(roles: ["admin", "manager"])`; app-queue queries gated `@auth(roles: ["service_manager"])`.
+- Create pipeline: `createEmail` → `email_recipients` fan-out (each recipient needs exactly one of `contact_org_id`/`contact_person_id`/`org_user_id` — Gain's `INVALID_RECIPIENT`) → `app_queue` row (`category`/`event` `send_email`, `params: { emailId, organizationId, integrationId, provider, toEmails, trackingEnabled }`). Hold-chaining is **org-scoped** (`org_id` + category) — do not widen it to a global category check.
+- Publishing goes through `src/utils/sqs-client.ts` (`publishSendJob`) — real SQS transport with a dev stub fallback when the queue is unreachable; the durable `app_queue` row is the source of truth; never publish to SQS without one. Do not touch the `{ event, queue_id, params }` envelope.
+- **Delivery is a separate repo: `Openlytic.Backend.Service.Email`** — a **lambda like Gain.IO's** (`src/index.ts` handler, SQS event source, SAM `template.yaml`), invoked locally via `npm run invoke -- <queue_id>` (or `--all`); it re-reads `app_queue` `send_email` rows and sends via Amazon SES (`EMAIL_DELIVERY_MODE=stub` in dev). Any change to the send lifecycle/backoff/persistence must be co-committed with that repo's `email.service.ts`.
 
 ---
 
@@ -179,8 +186,8 @@ When creating a new module (e.g., `analytics`), the agent MUST create the follow
 
 - **Never reimplement auth logic locally.** `src/modules/auth/` only wires + delegates to the **`@openlytic/auth`** package (`file:` dependency on `../Backend.Service.Auth`): `auth-repository.ts` maps package entity names → TypeORM entities via `configureAuthRepositories()` (called in `server.ts`), `auth.service.ts` wraps the package and maps `Error('UPPER_SNAKE')` → `CustomError`.
 - The surface is **REST via `src/modules/user/`** (`user.controller.ts` + `user.router.ts`, mounted at `/auth`) — mirror Gain.io route names + `{ data, message }` responses. There is **no `auth.graphql` / `resolvers/auth/`**.
-- Keep Gain's **snake_case** params/fields verbatim in the auth surface; the wrapper carries a file-level `eslint-disable camelcase, default-param-last`.
-- **Roles are server-derived only** (default `['user']`); never accept `roles` from request input. Bearer tokens are verified only in `authorizer()` (`src/middlewares/authorizer.ts`) and GraphQL `buildContext`; the deleted `src/utils/jwt.ts` must stay deleted.
+- Keep Gain's **snake_case** params/fields verbatim in the auth surface; `auth.service.ts` relies on `.eslintrc.json`'s per-file override (`camelcase`/`default-param-last` off for that file). **Do not add `eslint-disable` comments anywhere** — fix violations properly (camelCase locals, snake_case object keys).
+- **Roles are server-derived only** (default `['user']`); never accept `roles` from request input. Bearer tokens are verified only in `authorizer()` (`src/middlewares/authorizer.ts`) and GraphQL `buildContext`; `src/utils/jwt.ts` is unused dead code and must stay unused (never import it).
 
 ---
 
