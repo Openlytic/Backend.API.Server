@@ -1,0 +1,88 @@
+type Email {
+  id: UUID
+  bcc: [EmailRecipient]
+  body_html: String
+  cc: [EmailRecipient]
+  from: [EmailRecipient]
+  is_parent: Boolean
+  is_read: Boolean
+  message_id: String
+  org_user_id: UUID
+  provider_thread_id: String
+  queued_at: Date
+  received_at: Date
+  sent_at: Date
+  snippet: String
+  stage: EmailStageEnum
+  subject: String
+  thread_id: String
+  to: [EmailRecipient]
+  trashed_at: Date
+  is_trashed: Boolean
+  created_at: Date
+  updated_at: Date
+}
+
+enum EmailStageEnum {
+  draft
+  inbox
+  sent
+}
+
+input EmailRecipientInput {
+  contact_person_id: UUID
+  contact_org_id: UUID
+  org_user_id: UUID
+  email: String!
+}
+
+input EmailCreateInputType {
+  bcc: [EmailRecipientInput!]
+  body_html: String
+  cc: [EmailRecipientInput!]
+  snippet: String
+  subject: String
+  thread_id: String
+  to: [EmailRecipientInput!]
+}
+
+input EmailUpdateInputType {
+  bcc_recipients_for_adding: [EmailRecipientInput!]
+  body_html: String
+  cc_recipients_for_adding: [EmailRecipientInput!]
+  is_read: Boolean
+  is_trashed: Boolean
+  recipient_ids_for_removing: [UUID!]
+  snippet: String
+  stage: EmailStageEnum
+  subject: String
+  to_recipients_for_adding: [EmailRecipientInput!]
+}
+
+input EmailDeleteInputType {
+  email_id: UUID!
+}
+
+input EmailQueryInputType {
+  search_keyword: String
+  stage: EmailStageEnum
+  thread_id: String
+}
+
+type EmailQuerySchema {
+  data: [Email]
+  meta_data: MetaDataQuerySchema
+}
+
+extend type Mutation {
+  createEmail(inputData: EmailCreateInputType!): Email @auth(roles: ["admin", "manager"])
+  updateEmail(queryData: CommonEntityIdQueryDataType!, inputData: EmailUpdateInputType!): Email
+    @auth(roles: ["admin", "manager"])
+  deleteEmail(inputData: EmailDeleteInputType!): Email @auth(roles: ["admin", "manager"])
+}
+
+extend type Query {
+  getAnEmail(queryData: CommonEntityIdQueryDataType): Email @auth(roles: ["admin", "manager"])
+  getEmails(queryData: EmailQueryInputType, optionData: OptionDataType): EmailQuerySchema
+    @auth(roles: ["admin", "manager"])
+}
