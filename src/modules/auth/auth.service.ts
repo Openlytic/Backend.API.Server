@@ -1,8 +1,11 @@
 import * as authLib from '@openlytic/auth'
 import type { EntityManager } from 'typeorm'
 
-import { validateEmail } from 'src/modules/common/common.helper'
+import { validateEmail, validateUUID } from 'src/modules/common/common.helper'
+import { OrganizationEntity } from 'src/modules/organization/organization.entity'
+import { OrganizationUserEntity, OrganizationUserStatus } from 'src/modules/organization/organization_user.entity'
 import { UserEntity, UserStatus } from 'src/modules/user/user.entity'
+import { getRepository } from 'src/utils/database'
 import CustomError from 'src/utils/error'
 import { toHttpError } from 'src/utils/http-status'
 
@@ -45,6 +48,39 @@ const sanitizeUser = (user: UserEntity) => {
 }
 
 const getDefaultRoles = (): string[] => ['user']
+
+const getOrgMembershipRoles = async (
+  orgId: string | undefined,
+  userId: string,
+  transaction?: EntityManager
+): Promise<{ roles: string[]; org_id?: string }> => {
+  if (!orgId) {
+    return { roles: getDefaultRoles() }
+  }
+
+  if (!validateUUID(orgId)) {
+    throw new CustomError(400, 'INVALID_ORGANIZATION')
+  }
+
+  const organization = await getRepository(OrganizationEntity, transaction).findOne({ where: { id: orgId } })
+  if (!organization?.id) {
+    throw new CustomError(400, 'INVALID_ORGANIZATION')
+  }
+
+  const orgUser = await getRepository(OrganizationUserEntity, transaction).findOne({
+    where: { org_id: orgId, user_id: userId }
+  })
+  if (!orgUser?.id) {
+    throw new CustomError(401, 'UNREGISTERED_USER_OF_THE_ORG')
+  }
+  if (orgUser.status !== OrganizationUserStatus.ACTIVE) {
+    throw new CustomError(400, 'INACTIVE_ORGANIZATION_USER')
+  }
+
+  const roles = organization.created_by === userId ? ['admin', 'manager'] : ['manager']
+
+  return { roles, org_id: orgId }
+}
 
 const createUserIfMissing = async (email: string, transaction?: EntityManager) => {
   const user = await getAUser({ email }, transaction)
@@ -178,10 +214,11 @@ export const loginAnUser = async (params: LoginParams = {} as LoginParams, trans
     if (!validateEmail(email)) throw new CustomError(400, 'INVALID_EMAIL')
 
     const user = await getAUserByEmail(email, transaction)
+    const membership = await getOrgMembershipRoles(params?.org_id, user.id, transaction)
     const custom_claims: { roles: string[]; org_brand_id?: string; org_id?: string; [key: string]: unknown } = {
-      roles: getDefaultRoles()
+      roles: membership.roles
     }
-    if (params?.org_id) custom_claims.org_id = params.org_id
+    if (membership.org_id) custom_claims.org_id = membership.org_id
     if (params?.org_brand_id) custom_claims.org_brand_id = params.org_brand_id
 
     return authLib.loginAUser({ custom_claims, password: params?.password, user_id: user.id }, transaction)
@@ -208,6 +245,7 @@ export const verifyToken = async (params: VerifyTokenParams = {} as VerifyTokenP
   runAuth(() => authLib.verifyTokenForUser(params, transaction))
 
 export interface RefreshTokensParams {
+  access_token?: string
   refresh_token: string
   org_id?: string
   org_brand_id?: string
@@ -219,10 +257,16 @@ export const refreshTokens = async (
 ) =>
   runAuth(async () => {
     const decoded = authLib.decodeJWTToken(params?.refresh_token) || {}
-    const custom_claims: Record<string, unknown> = { roles: getDefaultRoles() }
-    if (decoded?.user_id) custom_claims.user_id = decoded.user_id
+    const userId = (decoded?.user_id as string) || (decoded?.sub as string) || null
+    if (!userId) throw new CustomError(401, 'INVALID_TOKEN')
+
+    const decodedAccess = params?.access_token ? authLib.decodeJWTToken(params?.access_token) || {} : {}
+    const orgId = params?.org_id || (decodedAccess?.org_id as string | undefined)
+    const membership = await getOrgMembershipRoles(orgId, userId, transaction)
+
+    const custom_claims: Record<string, unknown> = { roles: membership.roles, user_id: userId }
+    if (membership.org_id) custom_claims.org_id = membership.org_id
     if (decoded?.contact_id) custom_claims.contact_id = decoded.contact_id
-    if (params?.org_id) custom_claims.org_id = params.org_id
     if (params?.org_brand_id) custom_claims.org_brand_id = params.org_brand_id
 
     return authLib.refreshTokensForUser({ custom_claims, refresh_token: params?.refresh_token }, transaction)
