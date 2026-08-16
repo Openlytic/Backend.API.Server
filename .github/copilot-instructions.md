@@ -154,7 +154,7 @@ Keep this envelope intact. New job categories must follow the same hold→ready�
 - **GraphQL stays JWT-aware for future modules**: `buildContext` in `src/graphql/server.ts` verifies the token and exposes `context.user` (with `roles`/`role` for the `@auth` directive). `src/utils/jwt.ts` is **unused dead code** (no imports) — do not import it or reintroduce a parallel JWT layer.
 - GraphQL `@auth` directive (`directives/auth.ts` + SDL declaration in `typeDefs/base.graphql`) gates the organization and **email** module queries/mutations (`roles: ["admin", "manager"]`); app-queue read queries use `roles: ["service_manager"]`; reserved for tracking.
 - Multi-tenancy enforced via `organization_id`/`user_id` **derived from the JWT** — never accepted as request input.
-- **Roles are computed server-side** (`auth.service.ts` defaults to `['user']`; `loginAnApplication` issues `public`/`service_manager` for app users). Client-supplied `roles` in login/register input is rejected.
+- **Roles are computed server-side** — with an `org_id` at login/refresh they derive from `organization_user` membership (owner → `admin`/`manager`, member → `manager`; unknown org → `INVALID_ORGANIZATION`, non-member → `UNREGISTERED_USER_OF_THE_ORG`, inactive → `INACTIVE_ORGANIZATION_USER`); without an org `auth.service.ts` defaults to `['user']`. `loginAnApplication` issues `public`/`service_manager` for app users. Client-supplied `roles` in login/register input is rejected.
 - Passwords hashed (bcrypt via the auth package), provider tokens encrypted (`src/utils/crypto.ts`)
 
 ### Organization / tenancy (`src/modules/organization/` + `src/graphql/resolvers/organization/` — `feature/multi-tenancy`)
@@ -240,7 +240,7 @@ Fields in ascending **alphabetical order**, two exceptions:
 
 7. **`@openlytic/auth` reads its env directly from `process.env`**: `ACCESS_TOKEN_EXPIRY` (default `1d`), `REFRESH_TOKEN_EXPIRY` (default `30d`), `APPLICATION_TOKEN`, `JWT_SECRET`, `APP_URL`. These are documented in `.env.sample`; do not remove them.
 
-8. **Login roles default to `['user']`** in `auth.service.ts` — the `app_user`/`organization_user`/roles tables (with per-user roles) are not ported yet. `loginAnApplication` provides `public`/`service_manager` for the seeded app users. Admin REST routes (`/auth/set-user-email`, `/auth/set-user-password`) exist behind `authorizer(['admin', 'manager', ...])` but are unreachable until those roles are granted (future branch).
+8. **Login roles derive from org membership** in `auth.service.ts` — with an `org_id` the user is resolved against `organization`/`organization_user` (owner → `admin`/`manager`, member → `manager`; unknown org → `INVALID_ORGANIZATION`, non-member → `UNREGISTERED_USER_OF_THE_ORG`, inactive → `INACTIVE_ORGANIZATION_USER`), and without an org they default to `['user']`. The `app_user`/per-user roles tables aren't ported. `loginAnApplication` provides `public`/`service_manager` for the seeded app users. Admin REST routes (`/auth/set-user-email`, `/auth/set-user-password`) are reachable with org-owner/manager tokens.
 
 ---
 
