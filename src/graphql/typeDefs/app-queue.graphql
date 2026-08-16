@@ -1,0 +1,43 @@
+type AppQueue {
+  id: UUID
+  category: String
+  completed_at: Date
+  created_by: UUID
+  delay_seconds: Int
+  destination: String
+  event: String
+  org_id: UUID
+  params: Object
+  retry_count: Int
+  status: AppQueueStatusEnum
+  created_at: Date
+  updated_at: Date
+}
+
+enum AppQueueStatusEnum {
+  hold
+  ready
+  sent
+  processing
+  completed
+  failed
+}
+
+input AppQueueQueryInputType {
+  category: String
+  destination: String
+  event: String
+  org_id: UUID
+  statuses: [AppQueueStatusEnum]
+}
+
+type AppQueueQuerySchema {
+  data: [AppQueue]
+  meta_data: MetaDataQuerySchema
+}
+
+extend type Query {
+  getAnAppQueue(queryData: CommonEntityIdQueryDataType!): AppQueue @auth(roles: ["service_manager"])
+  getAppQueues(queryData: AppQueueQueryInputType, optionData: OptionDataType): AppQueueQuerySchema
+    @auth(roles: ["service_manager"])
+}
