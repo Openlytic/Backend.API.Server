@@ -10,7 +10,7 @@ This is a **multi-tenant backend API server** — the control plane for the Open
 
 The primary API surface is **GraphQL** (Apollo Server 4). REST is minimal (health + provider OAuth callback only). The server runs on **Node 20+, TypeScript, Express 4, Apollo Server 4, TypeORM (PostgreSQL)**, and publishes jobs to **SQS** as transport for a durable `app_queue` table.
 
-The email service consumer (a separate repo, `Openlytic.Backend.Service.Email`) is JS/lambda-style and reads the same `{ event, queue_id, params }` envelope.
+The email service consumer (a separate repo, `Openlytic.Backend.Service.Email`) is a TS **lambda mirroring Gain.IO's email service**: SQS event source → `src/index.ts` handler → delivers via Amazon SES. Local dev invokes the handler with `npm run invoke -- <queue_id>`. It reads the same `{ event, queue_id, params }` envelope.
 
 ---
 
@@ -89,7 +89,7 @@ src/
 | Module folders          | kebab-case                                    | `email-analytic/`, `tracked-link/`                    |
 | GraphQL operations      | `create{Entity}` / `{entities}` queries       | `createEmail`, `emails`, `emailAnalytics`             |
 
-**Exception — the auth module (`src/modules/auth/auth.service.ts`) uses the `@openlytic/auth` (Gain.io) **snake_case** params contract verbatim** (`user_id`, `access_token`, `custom_claims`, `new_email`, `old_passwords`). It carries a **file-level `/* eslint-disable camelcase, default-param-last */`** with a rationale comment — `.eslintrc.json` global rules are NOT relaxed. Do not globalize camelCase here.
+**Exception — the auth module (`src/modules/auth/auth.service.ts`) uses the `@openlytic/auth` (Gain.io) **snake_case** params contract verbatim** (`user_id`, `access_token`, `custom_claims`, `new_email`, `old_passwords`). `.eslintrc.json` has a **per-file override** turning `camelcase`/`default-param-last` off for this file — global rules are NOT relaxed, and **no `eslint-disable` comments exist anywhere in the codebase** (camelCase locals + snake_case object keys/properties everywhere else). Do not globalize camelCase here.
 
 ### Import Rules (CRITICAL)
 
@@ -140,9 +140,9 @@ The `transaction` parameter must be threaded into every write via `getRepository
 
 The API server **never publishes to SQS directly without a durable `app_queue` row**:
 
-1. `createEmail` writes the `Email`, fans out `email_recipients`, inserts an `app_queue` row (`category: 'send_email'`, `event: 'send_email'`, `params: { emailId, organizationId, integrationId, provider, toEmails, trackingEnabled }`), status `hold`/`ready` (hold if another send_email is running → promoted to `ready` on completion).
-2. On becoming `ready`, publish `{ event: 'send_email', queue_id, params }` to SQS (size-limited − params must stay lean).
-3. The consumer (email service) marks `processing` → `completed`/`failed`; failures re-publish with backoff `delay = retry_count * 60` (≤ 300 s, `max_retries` 5).
+1. `createEmail` writes the `Email` (stage `sent` when to/cc/bcc exist, else `draft`; `thread_id` self-assigned when missing), fans out `email_recipients` (type `to`/`cc`/`bcc`, each requiring exactly one of `contact_org_id`/`contact_person_id`/`org_user_id` — Gain's `INVALID_RECIPIENT` contract), inserts an `app_queue` row (`category: 'send_email'`, `event: 'send_email'`, `destination: 'email'`, `params: { emailId, organizationId, integrationId, provider, toEmails, trackingEnabled }`), status `hold`/`ready` (hold if another send_email is running **for the same `org_id`** — org-scoped, a deliberate multi-tenant fix over Gain's global category check → promoted to `ready` on completion).
+2. When `ready`, the API publishes `{ event: 'send_email', queue_id, params }` via `src/utils/sqs-client.ts` (`publishSendJob` — `SQSClient` + `SendMessageCommand` to `SQS_QUEUE_URL`; falls back to a stub log + fake `MessageId` when the queue is unreachable, so dev keeps working offline). The durable `app_queue` row is the source of truth — the consumer re-reads it, so SQS is transport only.
+3. The consumer (**`Openlytic.Backend.Service.Email`**, separate repo, a **lambda like Gain.IO's** — `src/index.ts` handler, SQS event source, SAM `template.yaml`) delivers: it re-reads `app_queue` rows (`category: 'send_email'`, status `ready`/`sent`) from the same Postgres, marks `processing` → sends via **Amazon SES** (`@aws-sdk/client-ses`, `SendEmailCommand`) → `completed`/`failed`. Success persists `provider_message_id` + `send_status='sent'`/`sent_at` on each recipient and `message_id`/`sent_at`/`queued_at` on the email; failures re-queue with backoff `delay = retry_count * 60` (≤ 300 s, `max_retries` 5) and a terminal queue promotes the org's next `hold` row to `ready`. Dev mode `EMAIL_DELIVERY_MODE=stub` (no AWS creds) logs + fake MessageId instead; local dev invokes the handler via `npm run invoke -- <queue_id>` (or `--all`).
 
 Keep this envelope intact. New job categories must follow the same hold→ready→processing→completed/failed lifecycle and use `app_queue.service` helpers.
 
@@ -151,8 +151,8 @@ Keep this envelope intact. New job categories must follow the same hold→ready�
 - **JWT issued/verified by the `@openlytic/auth` package** (`configureRepositoryAccessor` wired in `src/modules/auth/auth-repository.ts`, called at boot in `server.ts`). Tokens carry `roles`, `sub`, `user_id`/`contact_id`, `org_id`, `org_brand_id`.
 - **The auth surface is REST, not GraphQL** — `src/modules/user/user.router.ts` (mounted at `/auth`) + `user.controller.ts` mirror Gain.io's `user.router.js`/`user.controller.js`: `/auth/register`, `/auth/login`, `/auth/refresh-token`, `/auth/logout`, `/auth/change-password`, `/auth/forgot-password`, `/auth/verify-forgot-password`, etc. Responses are `{ data, message }` (200) or `CustomError` status codes. `src/graphql/typeDefs/auth.graphql` + `resolvers/auth/` were removed — do not reintroduce a GraphQL auth surface.
 - **REST endpoints are protected with `authorizer()`** (`src/middlewares/authorizer.ts`) — verifies the Bearer access token via `authService.verifyToken({ token, type: 'access_token' })`, sets `req.user` (JWT claims incl. `roles`), optional `authorizer(['admin', 'manager'])` role gate. Missing/invalid token → `401`, insufficient roles → `403`.
-- **GraphQL stays JWT-aware for future modules**: `buildContext` in `src/graphql/server.ts` verifies the token and exposes `context.user` (with `roles`/`role` for the `@auth` directive). `src/utils/jwt.ts` was removed — do not reintroduce a parallel JWT layer.
-- GraphQL `@auth` directive (`directives/auth.ts` + SDL declaration in `typeDefs/base.graphql`) gates the organization module queries/mutations (`roles: ["admin", "manager"]`) and is **reserved for email/tracking modules**.
+- **GraphQL stays JWT-aware for future modules**: `buildContext` in `src/graphql/server.ts` verifies the token and exposes `context.user` (with `roles`/`role` for the `@auth` directive). `src/utils/jwt.ts` is **unused dead code** (no imports) — do not import it or reintroduce a parallel JWT layer.
+- GraphQL `@auth` directive (`directives/auth.ts` + SDL declaration in `typeDefs/base.graphql`) gates the organization and **email** module queries/mutations (`roles: ["admin", "manager"]`); app-queue read queries use `roles: ["service_manager"]`; reserved for tracking.
 - Multi-tenancy enforced via `organization_id`/`user_id` **derived from the JWT** — never accepted as request input.
 - **Roles are computed server-side** (`auth.service.ts` defaults to `['user']`; `loginAnApplication` issues `public`/`service_manager` for app users). Client-supplied `roles` in login/register input is rejected.
 - Passwords hashed (bcrypt via the auth package), provider tokens encrypted (`src/utils/crypto.ts`)
@@ -162,7 +162,7 @@ Keep this envelope intact. New job categories must follow the same hold→ready�
 - **GraphQL-first, mirroring Gain.io's organization module** (unlike the REST auth facade). Surface: `createAnOrganization` / `updateAnOrganization` / `deleteAnOrganization` mutations + `getAnOrganization` / `getOrganizations` queries in `src/graphql/typeDefs/organization.graphql`, resolvers in `src/graphql/resolvers/organization/`, mutations wrapped in `useTransaction()` and gated with `@auth(roles: ["admin", "manager"])`.
 - Entities: `organization` (OrganizationEntity), `reserved_sub_domain` (ReservedSubDomainEntity), `organization_user` (OrganizationUserEntity tenancy join). All follow the `@PrimaryColumn` uuid + `@BeforeInsert generateId()` convention.
 - **REST complement** (mirrors Gain.io's `organization.router.js` — 3 routes only): `GET /organization?sub_domain=…`, `GET /organization/check-availability?sub_domain=…`, `POST /organization` (create org for a user, `{ user_id, org_name, sub_domain, location, time_zone }` → 201). `POST /organization` is rate-limited (3 req/min) and NOT `authorizer()`-gated (bootstrap path, mirrors Gain.io).
-- **Snake_case Gain contract:** `organization.helper.ts` / `organization.service.ts` carry a file-level `/* eslint-disable camelcase, default-param-last */` — the same exception as `auth.service.ts`. `common.helper.ts` `validateDomain` carries a scoped `/* eslint-disable camelcase */`.
+- **Snake_case Gain contract:** `organization.helper.ts` / `organization.service.ts` keep snake_case keys/properties verbatim — `camelcase.properties: 'never'` (airbnb base) allows object keys, so locals stay camelCase and **no `eslint-disable` comments are needed**; only `auth.service.ts` gets `camelcase`/`default-param-last` off, via `.eslintrc.json`.
 - **Simplified from Gain.io (deferred modules):** org settings/files (logo/icon keys → `null`), location entity, plans, roles/permissions, work schedules, SES tenant, PostHog, mock-data seed, subscription/usage, `reset*` mutations and the realtime subscription. `getAnOrganizationBySubDomain` returns `{ id, created_at, logo_key: null, logo_icon_key: null, name, sub_domain }`.
 
 ### GraphQL Schema File Ordering (`.graphql` files)
@@ -203,11 +203,11 @@ Fields in ascending **alphabetical order**, two exceptions:
 
 7. **CORS `origin: true`** — API server behind infrastructure access controls. Do not flag as a security issue.
 
-8. **`src/modules/auth/auth.service.ts`** — the snake_case params contract, the file-level `/* eslint-disable camelcase, default-param-last */`, and the server-side roles derivation (`custom_claims.roles` is never taken from client input). Executed via the `@openlytic/auth` package.
+8. **`src/modules/auth/auth.service.ts`** — the snake_case params contract, the `.eslintrc.json` per-file override (`camelcase`/`default-param-last` off for this file — the only one), and the server-side roles derivation (`custom_claims.roles` is never taken from client input). Executed via the `@openlytic/auth` package.
 
 9. **`configureAuthRepositories()`** (`src/modules/auth/auth-repository.ts`) — the name→entity accessor seam that mirrors Gain.io's `sequelize.models.<name>`. Do not replace with entity-class-keyed lookups or call it per-request.
 
-10. **`src/utils/jwt.ts` was deleted** — the auth package owns JWT issue/verify. Do not reintroduce a parallel JWT helper; the REST `authorizer()` and GraphQL `buildContext` are the only token-verification points.
+10. **`src/utils/jwt.ts` is unused dead code** (no imports) — the auth package owns JWT issue/verify. Do not import it or reintroduce a parallel JWT helper; the REST `authorizer()` and GraphQL `buildContext` are the only token-verification points.
 
 11. **`src/middlewares/authorizer.ts`** — the REST auth gate (Bearer → `authService.verifyToken` → `req.user`, `401`/`403` semantics). Do not reimplement token verification inline in controllers.
 
@@ -225,7 +225,7 @@ Fields in ascending **alphabetical order**, two exceptions:
 8. **Sensitive REST route without `authorizer()`** — or a GraphQL mutation/query without `@auth` (email/tracking modules) — on auth/tenant data
 9. **Entity without the uuid `@PrimaryColumn` + `@BeforeInsert generateId()` convention**
 10. **`roles` (or any authorization claim) accepted from client input** in auth endpoints — auth claims must be derived server-side (`auth.service.ts`)
-11. **A second JWT/`verify` layer** alongside `@openlytic/auth` (e.g. a resurrected `src/utils/jwt.ts`)
+11. **A second JWT/`verify` layer** alongside `@openlytic/auth` (e.g. importing the unused `src/utils/jwt.ts`)
 
 ---
 
