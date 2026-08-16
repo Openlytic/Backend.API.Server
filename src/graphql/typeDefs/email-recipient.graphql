@@ -1,0 +1,44 @@
+type EmailRecipient {
+  id: UUID
+  contact_org_id: UUID
+  contact_person_id: UUID
+  email: String
+  email_id: UUID
+  org_user_id: UUID
+  provider_message_id: String
+  provider_thread_id: String
+  send_status: EmailRecipientSendStatusEnum
+  sent_at: Date
+  type: EmailRecipientTypeEnum
+  created_at: Date
+  updated_at: Date
+}
+
+enum EmailRecipientTypeEnum {
+  bcc
+  cc
+  from
+  to
+}
+
+enum EmailRecipientSendStatusEnum {
+  failed
+  pending
+  sent
+}
+
+input EmailRecipientQueryInputType {
+  email: String
+  email_id: UUID
+  type: EmailRecipientTypeEnum
+}
+
+type EmailRecipientQuerySchema {
+  data: [EmailRecipient]
+  meta_data: MetaDataQuerySchema
+}
+
+extend type Query {
+  getEmailRecipients(queryData: EmailRecipientQueryInputType, optionData: OptionDataType): EmailRecipientQuerySchema
+    @auth(roles: ["admin", "manager"])
+}
