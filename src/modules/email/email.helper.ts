@@ -18,7 +18,15 @@ export const countEmails = async (options?: FindManyOptions<EmailEntity>) =>
 
 export const prepareEmailData = (inputData?: Record<string, unknown>): Record<string, unknown> => {
   const data: Record<string, unknown> = {}
-  const { body_html: bodyHtml, is_read: isRead, is_trashed: isTrashed, snippet, stage, subject } = inputData || {}
+  const {
+    body_html: bodyHtml,
+    is_read: isRead,
+    is_trashed: isTrashed,
+    snippet,
+    stage,
+    subject,
+    tracking_enabled: trackingEnabled
+  } = inputData || {}
 
   if (typeof subject === 'string' && subject.length) data.subject = subject
   if (typeof bodyHtml === 'string' && bodyHtml.length) data.body_html = bodyHtml
@@ -26,6 +34,7 @@ export const prepareEmailData = (inputData?: Record<string, unknown>): Record<st
   if (stage) data.stage = stage
   if (typeof isRead === 'boolean') data.is_read = isRead
   if (typeof isTrashed === 'boolean') data.is_trashed = isTrashed
+  if (typeof trackingEnabled === 'boolean') data.tracking_enabled = trackingEnabled
 
   return data
 }
