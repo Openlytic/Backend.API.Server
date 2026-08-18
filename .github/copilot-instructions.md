@@ -42,21 +42,22 @@ src/
 │   ├── auth-token/              # auth_token entity (access/refresh token rows)
 │   ├── verification-token/      # verification_token entity (6-digit OTP, 5-min expiry)
 │   ├── email/                   # createEmail → email_recipients → app_queue → SQS
-│   ├── email-analytic/          # materialized projection upsert + link summaries + deliverability report
 │   ├── email-recipient/         # fan-out target rows (type, send_status, provider_message_id)
-│   ├── email-tracking/          # mail_tracking_events entity (10 event kinds)
+│   ├── email-tracking/          # read-side analytics: email_tracking_events + tracked_link + email_analytic
+│   │                            #   entities and the query-only email-tracking.helper.ts (event log,
+│   │                            #   link summaries + deliverability report). The event log/projection are
+│   │                            #   WRITTEN by the email-service consumer (Openlytic.Backend.Service.Email),
+│   │                            #   which serves the /email-tracking/open + /email-tracking/click endpoints.
 │   ├── integration/             # gmail/outlook OAuth + encrypted tokens
 │   ├── organization/            # tenant (organization + reserved_sub_domain + organization_user tenancy join)
 │   ├── provider/                # OAuth URL building / token exchange
 │   ├── sync-history/            # sync-run audit (entity ready; inbox sync on roadmap)
-│   ├── tracked-link/            # per-email rewritten links (unique email_id+target_url)
 │   └── user/                    # user entity + user.controller.ts + user.router.ts (REST auth wiring)
 ├── routes/index.ts              # GET /health + /auth/* (userRouter); OAuth callback in provider module
 └── utils/
     ├── database.ts              # DataSource, getRepository(entity, tx), useTransaction()
     ├── error.ts                 # CustomError(statusCode, message)
     ├── sqs-client.ts            # publishSendJob / publishTrackingEvent (SQS transport)
-    ├── crypto.ts                # token hashing / tracking signature
     └── logger.ts                # winston
 ```
 
@@ -191,7 +192,7 @@ Fields in ascending **alphabetical order**, two exceptions:
 
 1. **`src/modules/entities.ts`** — the centralized entity registry (array + named re-exports) is intentional. Do not split registration into individual files.
 
-2. **Raw SQL in `email-analytic.helper.ts` / `email-analytic.service.ts`** (`upsertEmailAnalytic`, `listLinkClickSummariesForQuery`, deliverability queries) — PostgreSQL-specific, performance-critical (idempotent `ON CONFLICT` upserts, forward-only counters/timestamps). Do not convert to generic TypeORM `save`.
+2. **Raw SQL in `src/modules/email-tracking/email-tracking.helper.ts`** (`getTrackedLinksForQuery`, `listLinkClickSummariesForQuery`, deliverability queries) — PostgreSQL-specific, performance-critical (idempotent `ON CONFLICT` upserts, forward-only counters/timestamps). The per-link summary compares `ev.event_type` **cast to text** against a `CASE` (PG enums don't implicitly coerce from a `CASE`'s `text` result) and counts `attachment_viewed` events for `kind='attachment'` links. Do not convert to generic TypeORM `save`. Note: the consumer repo's `email-tracking.service.ts` owns the write-side upsert (`upsertEmailAnalytic`/`persistTrackedLinks`/`recordEmailTrackingEvent`) — this API is read-only for tracking.
 
 3. **`useTransaction()` with `SET lock_timeout TO 40000`** (`src/utils/database.ts`) — intentional deadlock/lock prevention mirrored from Gain.io. Do not remove or restructure.
 
