@@ -86,7 +86,7 @@ A plan is **not required** for:
 
 ### Database Operations
 
-- **Never run raw SQL directly** against the database unless the existing helper already does (e.g. the `email-analytic` projection upsert) — use TypeORM repositories and `useTransaction()`
+- **Never run raw SQL directly** against the database unless the existing helper already does (e.g. the `email-tracking` link-summary/deliverability aggregates in `email-tracking.helper.ts` — the write-side `email_analytic` projection upsert lives in the **email-service consumer**, not here) — use TypeORM repositories and `useTransaction()`
 - **`src/db-sync.ts` is destructive** (drops + recreates the schema from entities) — run it only when explicitly asked; never in the request flow
 - **`syncDBEntities()` in `entities.ts` stays commented out** — never call it or re-enable auto-sync
 
@@ -94,7 +94,7 @@ A plan is **not required** for:
 
 - All `.graphql` type definitions are **auto-merged** by `src/graphql/schema.ts` (via `loadFilesSync`) — never hand-register typeDefs
 - New resolvers must be registered in `src/graphql/resolvers/index.ts`
-- The **`@auth` directive** is applied at the schema level (`directives/auth.ts`); mutations and sensitive queries declare `@auth(roles: [...])` in the typeDefs (organization + email use `["admin", "manager"]`; app-queue reads use `["service_manager"]`; reserved for tracking — the auth feature is REST)
+- The **`@auth` directive** is applied at the schema level (`directives/auth.ts`); mutations and sensitive queries declare `@auth(roles: [...])` in the typeDefs (organization + email + email-tracking read queries use `["admin", "manager"]`; app-queue reads use `["service_manager"]` — the auth feature is REST)
 - **File ordering in `.graphql` files**: All type/input/enum definitions must come **first**, followed by the operation blocks (Query/Mutation/Subscription) at the **bottom**.
 - **Field ordering within types**: `id` always **first**; `created_at`/`updated_at` always **last** (in that order); other fields in **ascending alphabetical order**
 
@@ -162,7 +162,7 @@ When creating a new module (e.g., `analytics`), the agent MUST create the follow
 
 3. **Helper**: `src/modules/{module}/{module}.helper.ts`
    - Export constants, query builders, and `…ForQuery` functions (`getRepository(entity, transaction?)`)
-   - **Helpers that run raw SQL must keep the existing patterns** (e.g. `email-analytic.helper.ts`)
+   - **Helpers that run raw SQL must keep the existing patterns** (e.g. `email-tracking.helper.ts`)
 
 4. **Helper Registration**: add barrel export in `src/modules/helpers.ts`
 
