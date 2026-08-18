@@ -1,0 +1,98 @@
+type EmailAnalytic {
+  id: UUID
+  attachment_view_count: Int
+  bounced_at: Date
+  click_count: Int
+  clicked_at: Date
+  complained_at: Date
+  delivered_at: Date
+  email_id: UUID
+  email_recipient_id: UUID
+  first_click_at: Date
+  first_open_at: Date
+  last_open_at: Date
+  open_count: Int
+  rejected_at: Date
+  sent_at: Date
+  status: EmailAnalyticStatusEnum
+  created_at: Date
+  updated_at: Date
+}
+
+enum EmailAnalyticStatusEnum {
+  bounced
+  clicked
+  complained
+  delivered
+  failed
+  opened
+  pending
+  rejected
+  sent
+}
+
+type TrackedLink {
+  id: UUID
+  click_count: Int
+  email_id: UUID
+  kind: String
+  label: String
+  last_clicked_at: Date
+  sort: Int
+  target_url: String
+  created_at: Date
+  updated_at: Date
+}
+
+type EmailTrackingEvent {
+  id: UUID
+  email_id: UUID
+  email_recipient_id: UUID
+  event_type: String
+  ip_address: String
+  link_id: UUID
+  link_name: String
+  occurred_at: Date
+  recipient_email: String
+  source: String
+  target_url: String
+  tracking_scope: String
+  user_agent: String
+  created_at: Date
+  updated_at: Date
+}
+
+input EmailAnalyticsQueryInputType {
+  email_id: UUID
+  status: EmailAnalyticStatusEnum
+}
+
+input TrackedLinksQueryInputType {
+  email_id: UUID!
+}
+
+input EmailTrackingEventsQueryInputType {
+  email_id: UUID
+  event_type: String
+}
+
+type EmailAnalyticsQuerySchema {
+  data: [EmailAnalytic]
+  meta_data: MetaDataQuerySchema
+}
+
+type EmailTrackingEventsQuerySchema {
+  data: [EmailTrackingEvent]
+  meta_data: MetaDataQuerySchema
+}
+
+extend type Query {
+  getAnEmailAnalytic(queryData: CommonEntityIdQueryDataType): EmailAnalytic @auth(roles: ["admin", "manager"])
+  getEmailAnalytics(queryData: EmailAnalyticsQueryInputType, optionData: OptionDataType): EmailAnalyticsQuerySchema
+    @auth(roles: ["admin", "manager"])
+  getTrackedLinks(queryData: TrackedLinksQueryInputType): [TrackedLink] @auth(roles: ["admin", "manager"])
+  getEmailTrackingEvents(
+    queryData: EmailTrackingEventsQueryInputType
+    optionData: OptionDataType
+  ): EmailTrackingEventsQuerySchema @auth(roles: ["admin", "manager"])
+}

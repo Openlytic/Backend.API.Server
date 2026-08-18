@@ -61,6 +61,7 @@ export interface EmailCreateInputData {
   subject?: string
   thread_id?: string
   to?: Array<Record<string, unknown> & { email?: string }>
+  tracking_enabled?: boolean
 }
 
 // Insert the durable send_email job and stub-publish on ready. Fan-out targets are the
@@ -85,7 +86,7 @@ const enqueueEmailSend = async (email: EmailEntity, user?: Record<string, unknow
         integrationId: null,
         provider: null,
         toEmails,
-        trackingEnabled: false
+        trackingEnabled: email.tracking_enabled ?? true
       }
     },
     user,
@@ -128,7 +129,8 @@ export const createEmailForMutation = async (
       snippet: params?.snippet || null,
       stage: hasSendableRecipients ? EmailStage.SENT : EmailStage.DRAFT,
       subject: parentEmail?.subject || params?.subject || null,
-      thread_id: params?.thread_id || null
+      thread_id: params?.thread_id || null,
+      tracking_enabled: params?.tracking_enabled ?? true
     },
     transaction
   )

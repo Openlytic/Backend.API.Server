@@ -58,6 +58,9 @@ export class EmailEntity {
   @Column({ type: 'boolean', default: false })
   is_trashed!: boolean
 
+  @Column({ type: 'boolean', default: true })
+  tracking_enabled!: boolean
+
   @Index()
   @Column({ type: 'uuid', nullable: true })
   org_id!: string | null
