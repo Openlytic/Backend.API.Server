@@ -17,6 +17,7 @@ type Email {
   subject: String
   thread_id: String
   to: [EmailRecipient]
+  tracking_enabled: Boolean
   trashed_at: Date
   is_trashed: Boolean
   created_at: Date
@@ -44,6 +45,7 @@ input EmailCreateInputType {
   subject: String
   thread_id: String
   to: [EmailRecipientInput!]
+  tracking_enabled: Boolean
 }
 
 input EmailUpdateInputType {
@@ -57,6 +59,7 @@ input EmailUpdateInputType {
   stage: EmailStageEnum
   subject: String
   to_recipients_for_adding: [EmailRecipientInput!]
+  tracking_enabled: Boolean
 }
 
 input EmailDeleteInputType {
