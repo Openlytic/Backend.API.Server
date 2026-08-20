@@ -3,7 +3,7 @@ import { ILike, In, Not } from 'typeorm'
 
 import { commonHelper } from 'src/modules/helpers'
 import { OrganizationEntity, OrganizationStatus } from 'src/modules/organization/organization.entity'
-import { OrganizationUserEntity } from 'src/modules/organization/organization_user.entity'
+import { OrganizationUserEntity, OrganizationUserStatus } from 'src/modules/organization/organization_user.entity'
 import { ReservedSubDomainEntity } from 'src/modules/organization/reserved-sub-domain.entity'
 import { UserEntity } from 'src/modules/user/user.entity'
 import { getRepository } from 'src/utils/database'
@@ -120,6 +120,9 @@ export const getOrganizationUsers = async (
   transaction?: EntityManager
 ) => getRepository(OrganizationUserEntity, transaction).find({ ...options })
 
+export const countOrganizationUsers = async (options?: FindManyOptions<OrganizationUserEntity>) =>
+  getRepository(OrganizationUserEntity).count({ ...options })
+
 export const createAnOrganizationUser = async (data: Partial<OrganizationUserEntity>, transaction?: EntityManager) => {
   const repo = getRepository(OrganizationUserEntity, transaction)
   return repo.save(repo.create(data))
@@ -219,4 +222,80 @@ export const checkAppBrandRemovingFeatureStatus = async (orgId?: string, transac
 
   // Openlytic: organization settings are not ported yet — remove_app_branding is unavailable.
   return false
+}
+
+export interface GetOrganizationUsersForQueryParams {
+  query?: { search_keyword?: string }
+  options?: { limit?: number; offset?: number; order?: unknown[] }
+}
+
+export const getOrganizationUsersForQuery = async (
+  params?: GetOrganizationUsersForQueryParams,
+  user?: Record<string, unknown>
+) => {
+  const { query = {}, options = {} } = params || {}
+  const { limit, offset } = options || {}
+  const { search_keyword: searchKeyword } = query || {}
+
+  const orgId = user?.org_id as string | undefined
+  if (!orgId) {
+    throw new CustomError(401, 'UNAUTHORIZED')
+  }
+
+  const organization = await getAnOrganization({ where: { id: orgId } })
+  if (!organization?.id) {
+    throw new CustomError(404, 'ORGANIZATION_NOT_FOUND')
+  }
+
+  const orgUserWhere: FindOptionsWhere<OrganizationUserEntity> = {
+    org_id: orgId,
+    status: OrganizationUserStatus.ACTIVE
+  }
+
+  if (searchKeyword) {
+    const matchingUsers = await getRepository(UserEntity).find({
+      where: { email: ILike(`%${searchKeyword}%`) }
+    })
+    const matchingUserIds = matchingUsers.map((item) => item.id)
+    if (!matchingUserIds.length) {
+      return { data: [], meta_data: { filtered_rows: 0, total_rows: 0 } }
+    }
+    orgUserWhere.user_id = In(matchingUserIds)
+  }
+
+  const orgUsers = await getOrganizationUsers({
+    where: orgUserWhere,
+    order: { created_at: 'DESC' },
+    take: limit,
+    skip: offset
+  })
+
+  const userRows = await getRepository(UserEntity).find({
+    where: { id: In(orgUsers.map((orgUser) => orgUser.user_id)) }
+  })
+  const userMap = new Map(userRows.map((item) => [item.id, item]))
+
+  const data = orgUsers.map((orgUser) => {
+    const userRow = userMap.get(orgUser.user_id)
+    return {
+      id: orgUser.id,
+      created_at: orgUser.created_at,
+      email: userRow?.email ?? null,
+      first_name: userRow?.first_name ?? null,
+      last_name: userRow?.last_name ?? null,
+      org_id: orgUser.org_id,
+      role: organization.created_by === orgUser.user_id ? 'admin' : 'manager',
+      slug: orgUser.slug,
+      status: orgUser.status,
+      updated_at: orgUser.updated_at,
+      user_id: orgUser.user_id
+    }
+  })
+
+  const filteredRows = await countOrganizationUsers({ where: orgUserWhere })
+  const totalRows = await countOrganizationUsers({
+    where: { org_id: orgId, status: OrganizationUserStatus.ACTIVE }
+  })
+
+  return { data, meta_data: { filtered_rows: filteredRows, total_rows: totalRows } }
 }

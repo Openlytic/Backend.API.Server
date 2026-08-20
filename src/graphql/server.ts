@@ -4,6 +4,8 @@ import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHt
 
 import schema from 'src/graphql/schema'
 import { verifyToken } from 'src/modules/auth/auth.service'
+import { OrganizationUserEntity, OrganizationUserStatus } from 'src/modules/organization/organization_user.entity'
+import { getRepository } from 'src/utils/database'
 
 export interface GraphQLContext {
   user: {
@@ -12,6 +14,7 @@ export interface GraphQLContext {
     contact_id?: string
     org_id?: string
     org_brand_id?: string
+    org_user_id?: string
     email?: string
     roles?: string[]
     role?: string[]
@@ -48,6 +51,14 @@ export const buildContext = async ({ req }: ExpressContextFunctionArgument): Pro
   }
   const roles = Array.isArray(payload.roles) ? payload.roles : []
 
+  let orgUserId: string | undefined
+  if (payload?.org_id && payload?.user_id) {
+    const orgUser = await getRepository(OrganizationUserEntity).findOne({
+      where: { org_id: payload.org_id, user_id: payload.user_id, status: OrganizationUserStatus.ACTIVE }
+    })
+    orgUserId = orgUser?.id
+  }
+
   return {
     user: {
       sub: payload.sub,
@@ -55,6 +66,7 @@ export const buildContext = async ({ req }: ExpressContextFunctionArgument): Pro
       contact_id: payload.contact_id,
       org_id: payload.org_id,
       org_brand_id: payload.org_brand_id,
+      org_user_id: orgUserId,
       roles,
       role: roles
     }
