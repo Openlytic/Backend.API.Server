@@ -14,6 +14,32 @@ enum OrganizationStatusEnum {
   resetting
 }
 
+enum OrganizationUserStatusEnum {
+  active
+  cancelled
+  inactive
+  invited
+}
+
+type OrganizationUser {
+  id: UUID
+  email: String
+  first_name: String
+  last_name: String
+  org_id: UUID
+  role: String
+  slug: String
+  status: OrganizationUserStatusEnum
+  user_id: UUID
+  created_at: Date
+  updated_at: Date
+}
+
+type OrganizationUsersQuerySchema {
+  data: [OrganizationUser]
+  meta_data: MetaDataQuerySchema
+}
+
 input OrganizationCreateInput {
   location: LocationUpdateInputType!
   org_name: String!
@@ -25,6 +51,10 @@ input OrganizationCreateInput {
 
 input OrganizationsQueryInput {
   org_statuses: [OrganizationStatusEnum!]
+  search_keyword: String
+}
+
+input OrganizationUsersQueryInput {
   search_keyword: String
 }
 
@@ -54,4 +84,8 @@ extend type Query {
   getAnOrganization(queryData: CommonEntityIdQueryDataType): Organization @auth(roles: ["admin", "manager"])
   getOrganizations(queryData: OrganizationsQueryInput, optionData: OptionDataType): OrganizationQuerySchema
     @auth(roles: ["admin", "manager"])
+  getOrganizationUsers(
+    queryData: OrganizationUsersQueryInput
+    optionData: OptionDataType
+  ): OrganizationUsersQuerySchema @auth(roles: ["admin", "manager"])
 }

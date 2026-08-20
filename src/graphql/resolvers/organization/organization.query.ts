@@ -20,5 +20,18 @@ export default {
       { query: args?.queryData, options: args?.optionData },
       context?.user
     )
+  },
+  async getOrganizationUsers(
+    parent: unknown,
+    args: {
+      queryData?: Record<string, unknown>
+      optionData?: { limit?: number; offset?: number; order?: unknown[] }
+    },
+    context: { user?: Record<string, unknown> }
+  ) {
+    return organizationHelper.getOrganizationUsersForQuery(
+      { query: args?.queryData, options: args?.optionData },
+      context?.user
+    )
   }
 }
