@@ -1,8 +1,9 @@
 import * as authLib from '@openlytic/auth'
 import type { EntityManager } from 'typeorm'
+import { In } from 'typeorm'
 
 import { validateEmail, validateUUID } from 'src/modules/common/common.helper'
-import { OrganizationEntity } from 'src/modules/organization/organization.entity'
+import { OrganizationEntity, OrganizationStatus } from 'src/modules/organization/organization.entity'
 import { OrganizationUserEntity, OrganizationUserStatus } from 'src/modules/organization/organization_user.entity'
 import { UserEntity, UserStatus } from 'src/modules/user/user.entity'
 import { getRepository } from 'src/utils/database'
@@ -48,6 +49,32 @@ const sanitizeUser = (user: UserEntity) => {
 }
 
 const getDefaultRoles = (): string[] => ['user']
+
+export interface OrganizationMembershipData {
+  org_id: string
+  name: string
+  sub_domain: string
+  role: string
+}
+
+const getOrganizationMembershipsForUser = async (
+  userId: string,
+  transaction?: EntityManager
+): Promise<OrganizationMembershipData[]> => {
+  const orgUsers = await getRepository(OrganizationUserEntity, transaction).find({
+    where: { user_id: userId, status: OrganizationUserStatus.ACTIVE }
+  })
+  if (!orgUsers.length) return []
+  const organizations = await getRepository(OrganizationEntity, transaction).find({
+    where: { id: In(orgUsers.map((item) => item.org_id)), status: OrganizationStatus.ACTIVE }
+  })
+  return organizations.map((organization) => ({
+    org_id: organization.id,
+    name: organization.name,
+    sub_domain: organization.sub_domain,
+    role: organization.created_by === userId ? 'admin' : 'manager'
+  }))
+}
 
 const getOrgMembershipRoles = async (
   orgId: string | undefined,
@@ -419,5 +446,6 @@ export const verifyUserPassword = async (
 export const getMeUserForQuery = async (user?: AuthUser, transaction?: EntityManager) =>
   runAuth(async () => {
     const userRow = await getAUserByContext(user, transaction)
-    return sanitizeUser(userRow)
+    const organizations = await getOrganizationMembershipsForUser(userRow.id, transaction)
+    return { ...sanitizeUser(userRow), organizations }
   })
